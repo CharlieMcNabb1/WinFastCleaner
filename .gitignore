@@ -1,0 +1,81 @@
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+target/
+src-tauri/target/
+**/src-tauri/target/
+dist/
+build/
+node_modules/
+coverage/
+*.profraw
+*.profdata
+# Tauri regenerates these from tauri.conf.json and capabilities/ at build time
+**/src-tauri/gen/
+
+# ---------------------------------------------------------------------------
+# Release artifacts (only produced by CI release workflows, never committed)
+# ---------------------------------------------------------------------------
+*.msi
+*.exe
+*.zip
+*.nsis
+*.msix
+*.appx
+
+# ---------------------------------------------------------------------------
+# Secrets and keys. The app needs none; if a future feature does, it is read
+# from the environment or a gitignored local config file.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.cer
+*.crt
+*.jks
+*.keystore
+*.snk
+# Tauri updater / signing keys
+.tauri/
+*.tauri.key
+tauri-signing*.key*
+
+# ---------------------------------------------------------------------------
+# Local app data: never commit logs, scan results, or recovery indexes
+# ---------------------------------------------------------------------------
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.log
+logs/
+snapshots/
+*.snapshot.json
+*.snapshot.json.gz
+recovery-index*
+.*-recovery/
+test-output/
+test-results/
+# Disk images created by tests (always generated in temp dirs, but just in case)
+*.img
+*.vhd
+*.vhdx
+
+# ---------------------------------------------------------------------------
+# Editor and OS files
+# ---------------------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+Thumbs.db
+desktop.ini
+.DS_Store

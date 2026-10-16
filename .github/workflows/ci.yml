@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: CI only needs to read the code. No secrets are used.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  windows:
+    name: Build and test (Windows)
+    # Pushes run directly. Pull requests run only when they come from a fork,
+    # because same-repo branches are already covered by the push run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - name: Cache cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: windows-cargo-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: windows-cargo-
+
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci --ignore-scripts
+
+      - name: Type-check frontend
+        working-directory: app
+        run: npm run check
+
+      - name: Test frontend
+        working-directory: app
+        run: npm test
+
+      - name: Build frontend
+        working-directory: app
+        run: npm run build
+
+      - name: rustfmt
+        run: cargo fmt --all --check
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+  linux-core:
+    name: Core tests incl. NTFS image (Linux)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - name: Cache cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: linux-cargo-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: linux-cargo-
+
+      - name: Install NTFS tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ntfs-3g
+
+      - name: clippy (core + cli)
+        run: cargo clippy -p cleaner-core -p cleaner-cli --all-targets --locked -- -D warnings
+
+      - name: Build a synthetic NTFS test image
+        run: sudo scripts/ntfs-test-image.sh setup "$RUNNER_TEMP/ntfs"
+
+      - name: Test (core + cli, including MFT parser against the NTFS image)
+        env:
+          WFC_NTFS_TEST_IMAGE: ${{ runner.temp }}/ntfs/test.img
+          WFC_NTFS_TEST_MOUNT: ${{ runner.temp }}/ntfs/mnt
+        run: cargo test -p cleaner-core -p cleaner-cli --locked
+
+      - name: Tear down NTFS test image
+        if: always()
+        run: sudo scripts/ntfs-test-image.sh teardown "$RUNNER_TEMP/ntfs"

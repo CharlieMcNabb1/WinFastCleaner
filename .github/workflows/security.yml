@@ -1,0 +1,100 @@
+name: Security
+
+on:
+  push:
+  pull_request:
+  schedule:
+    # Weekly, so newly published advisories are caught even without commits.
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+# Least privilege: these jobs only read the code. No secrets are used.
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install gitleaks (pinned, checksum-verified)
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum --check --strict
+          mkdir -p bin && tar -xzf gitleaks.tar.gz -C bin gitleaks
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Scan full git history
+        run: gitleaks git --config .gitleaks.toml --redact --verbose --exit-code 1 .
+
+  cargo-deny:
+    name: Rust dependencies (cargo deny)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - name: Install cargo-deny (pinned, checksum-verified)
+        env:
+          CARGO_DENY_VERSION: 0.20.2
+          CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+        run: |
+          cd "$RUNNER_TEMP"
+          name="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl -sSfL -o cargo-deny.tar.gz \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/${name}.tar.gz"
+          echo "${CARGO_DENY_SHA256}  cargo-deny.tar.gz" | sha256sum --check --strict
+          mkdir -p bin && tar -xzf cargo-deny.tar.gz -C bin --strip-components=1 "${name}/cargo-deny"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Check advisories, licenses, bans, and sources
+        run: cargo deny --locked check
+
+  npm-audit:
+    name: Frontend dependencies (npm audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install (no install scripts)
+        working-directory: app
+        run: npm ci --ignore-scripts
+
+      - name: Audit for known vulnerabilities
+        working-directory: app
+        run: npm audit --audit-level=moderate
+
+      - name: Verify registry signatures
+        working-directory: app
+        run: npm audit signatures

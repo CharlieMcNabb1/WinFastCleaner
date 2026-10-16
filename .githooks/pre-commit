@@ -1,0 +1,10 @@
+#!/bin/sh
+# Optional local secret scan before each commit.
+# Enable once per clone with:  git config core.hooksPath .githooks
+# CI runs the same scan on every push, so this is only an early warning.
+
+if command -v gitleaks >/dev/null 2>&1; then
+    exec gitleaks git --pre-commit --staged --redact --verbose --config .gitleaks.toml
+else
+    echo "pre-commit: gitleaks not found on PATH; skipping local secret scan (CI still runs it)." >&2
+fi
