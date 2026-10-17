@@ -19,6 +19,7 @@ use tauri::{AppHandle, Manager, State};
 use cleaner_core::cleaner::{
     self, CleanPlan, CleanReport, Context, ExecOptions, PlanItem, Rejected, RuleStatus,
 };
+use cleaner_core::health::{self, JunkSummary};
 use cleaner_core::progress::CancelToken;
 use cleaner_core::recovery::RecoveryStore;
 use cleaner_core::rules::{self, RuleError, RuleSource, Tier};
@@ -154,6 +155,10 @@ pub fn start_junk_scan(
                 );
                 let mut scan = cleaner::scan(&set.rules, &ctx, &cancel);
                 scan.errors = set.errors;
+                if !cancel.is_cancelled() {
+                    // For the health check and the tray.
+                    let _ = health::save_junk(&data, &JunkSummary::from_scan(&scan));
+                }
                 Ok((scan, ctx.elevated))
             }));
             let state = app.state::<AppState>();

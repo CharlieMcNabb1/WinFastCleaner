@@ -1,4 +1,5 @@
-/* Design tokens. Light and dark themes follow the Windows setting. */
+/* Design tokens. Light and dark themes follow the Windows setting, unless the
+   user picks one in Settings (the data-theme attribute on <html>). */
 :root {
   color-scheme: light dark;
   --bg: #f5f6fa;
@@ -34,8 +35,10 @@
   --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
 }
 
+/* Dark tokens: used when Windows is dark (unless the user picked light in
+   Settings), or when the user picked dark. Keep the two blocks the same. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #111319;
     --surface: #181b23;
     --surface-2: #1f232d;
@@ -64,6 +67,39 @@
   }
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111319;
+  --surface: #181b23;
+  --surface-2: #1f232d;
+  --surface-3: #272c39;
+  --border: #2c3140;
+  --text: #e6e9f1;
+  --text-2: #9ba4b6;
+  --accent: #748ffc;
+  --accent-2: #1e2540;
+  --accent-text: #0d1020;
+  --focus: #91a7ff;
+  --bar: #748ffc;
+  --bar-track: #2a2f3d;
+  --notice-bg: #1a2135;
+  --notice-border: #33416b;
+  --alert-bg: #2a2214;
+  --alert-border: #5c4a24;
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%);
+
+  --tier-green: #69db7c;
+  --tier-green-bg: #13261a;
+  --tier-yellow: #ffc078;
+  --tier-yellow-bg: #2b2112;
+  --tier-red: #ff8787;
+  --tier-red-bg: #2c1515;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -72,6 +108,8 @@ html,
 body {
   margin: 0;
   height: 100%;
+  /* Only the panes (and the sidebar) scroll, never the whole window. */
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);

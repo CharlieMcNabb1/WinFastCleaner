@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
 
   import { type Backend, backend, errorMessage } from "../lib/backend.ts";
@@ -13,7 +14,8 @@
     statusText,
   } from "../lib/cleaner.ts";
   import { formatDuration, formatSize } from "../lib/format.ts";
-  import type { AppInfo, CleanReport, JunkItem, JunkView, PlanView, RuleView } from "../lib/types.ts";
+  import { cancelJunkScan, junkScan, scanJunk } from "../lib/junk.svelte.ts";
+  import type { AppInfo, CleanerFocus, CleanReport, JunkItem, JunkView, PlanView, RuleView } from "../lib/types.ts";
   import CleanResult from "./CleanResult.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -27,14 +29,18 @@
   }: {
     info: AppInfo | null;
     active: boolean;
-    /** A rule to scroll to and highlight (from "What grew"). */
-    focus: { ruleId: string; seq: number } | null;
+    /**
+     * A rule to scroll to and highlight (from "What grew"), or "safe" to pick
+     * only the safe (green) items and show the preview (from Home).
+     */
+    focus: CleanerFocus | null;
     onNavigate: (tab: "recover") => void;
   } = $props();
 
   let api = $state<Backend | null>(null);
+  /** The scan the selection belongs to (the shared scan, once applied). */
   let junk = $state<JunkView | null>(null);
-  let scanning = $state(false);
+  let scanning = $derived(junkScan.scanning);
   let error = $state<string | null>(null);
   const selected = new SvelteSet<string>();
   const deselected: Deselected = new SvelteMap();
@@ -64,6 +70,10 @@
     const f = focus;
     if (!f || f.seq === lastFocus || !junk) return;
     lastFocus = f.seq;
+    if (f.kind === "safe") {
+      untrack(() => pickSafe());
+      return;
+    }
     highlighted = f.ruleId;
     // Wait for the row to render, then bring it into view.
     requestAnimationFrame(() =>
@@ -74,30 +84,39 @@
     }, 2500);
   });
 
-  // The first visit to the tab starts a scan.
+  // The first visit to the tab scans, unless Home already did.
   let started = false;
   $effect(() => {
     if (active && !started) {
       started = true;
-      void scan();
+      void (async () => {
+        api ??= await backend();
+        if (!untrack(() => junkScan.view || junkScan.scanning)) await scan();
+      })();
     }
+  });
+
+  // Each finished scan (from here or from Home) replaces the results.
+  $effect(() => {
+    const view = junkScan.view;
+    if (view && view !== untrack(() => junk)) untrack(() => applyResults(view));
+  });
+  $effect(() => {
+    if (junkScan.error) error = junkScan.error;
   });
 
   async function scan() {
     api ??= await backend();
-    if (scanning) return;
-    scanning = true;
-    error = null;
-    try {
-      await api.startJunkScan((e) => {
-        scanning = false;
-        if (e.type === "done") applyResults(e.result);
-        else if (e.type === "failed") error = e.message;
-      });
-    } catch (e) {
-      scanning = false;
-      error = errorMessage(e);
-    }
+    await scanJunk();
+  }
+
+  /** Only the safe items, then straight to the preview. */
+  function pickSafe() {
+    if (!junk) return;
+    selected.clear();
+    deselected.clear();
+    for (const r of junk.rules) if (selectedByDefault(r)) selected.add(r.id);
+    if (selected.size > 0) void preview();
   }
 
   function applyResults(view: JunkView) {
@@ -132,7 +151,8 @@
   }
 
   async function preview() {
-    if (!api || !junk) return;
+    api ??= await backend();
+    if (!junk) return;
     preparing = true;
     error = null;
     try {
@@ -285,7 +305,7 @@
     <section class="card running" aria-live="polite">
       <div class="running-head">
         <strong>Looking for junk…</strong>
-        <button class="btn" onclick={() => api?.cancelJunkScan()}><Icon name="x" /> Cancel</button>
+        <button class="btn" onclick={cancelJunkScan}><Icon name="x" /> Cancel</button>
       </div>
       <div class="progress-track" role="progressbar" aria-label="Scanning for junk">
         <span class="progress-fill indeterminate"></span>

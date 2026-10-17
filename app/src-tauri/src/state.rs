@@ -1,5 +1,5 @@
-//! Shared app state: the running scan (if any), the last finished one, and
-//! the cleaner's latest results and previewed plan.
+//! Shared app state: the running scan (if any), the last finished one, the
+//! cleaner's latest results and previewed plan, and the latest update list.
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -8,6 +8,7 @@ use cleaner_core::dupes::DupeResult;
 use cleaner_core::finder::FinderResult;
 use cleaner_core::progress::CancelToken;
 use cleaner_core::scan::Scan;
+use cleaner_core::winget::Upgrade;
 
 /// A finished scan the frontend can browse. Node IDs are only valid
 /// together with this scan's `id`.
@@ -63,6 +64,10 @@ pub struct Inner {
     pub finding: Option<CancelToken>,
     pub found: Option<Arc<LoadedFind>>,
     pub dupes: Option<Arc<LoadedDupes>>,
+    /// winget is running (checking or updating).
+    pub updates_busy: Option<CancelToken>,
+    /// The latest update list. Only apps in it can be updated.
+    pub upgrades: Option<Vec<Upgrade>>,
 }
 
 impl Inner {

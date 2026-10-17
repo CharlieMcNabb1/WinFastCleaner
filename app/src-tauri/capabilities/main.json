@@ -43,6 +43,17 @@
     "allow-compare-snapshots",
     "allow-privacy-survey",
     "allow-privacy-clear",
+    "allow-startup-list",
+    "allow-startup-set-enabled",
+    "allow-updates-status",
+    "allow-updates-list",
+    "allow-updates-apply",
+    "allow-updates-cancel",
+    "allow-health-check",
+    "allow-schedule-status",
+    "allow-schedule-save",
+    "allow-tray-status",
+    "allow-tray-set",
     "dialog:allow-open"
   ]
 }

@@ -4,11 +4,9 @@ A fast, safe, transparent disk cleaner and system health tool for Windows 10
 and 11 (x64). WinFastCleaner is an open-source alternative to CCleaner. It is
 not affiliated with or endorsed by CCleaner or Piriform/Gen Digital.
 
-> **Status: early development (Phase 4 of 6).** The disk scanner, Disk view,
-> cleaner, recovery bin, file finders, "What grew", Windows privacy cleaning,
-> and secure delete work today. It has not been tested widely on real
-> PCs yet, so preview what it will clean and keep the recovery bin on. See
-> [Roadmap](#roadmap).
+> **Status: all six build phases are done, but it is new.** It has not been
+> tested widely on real PCs yet, so preview what it will clean and keep the
+> recovery bin on. See [Roadmap](#roadmap).
 
 - **Fast.** On NTFS drives, when run as administrator, it reads the Master
   File Table directly, so a full drive scan takes seconds. Otherwise it falls
@@ -140,9 +138,10 @@ Settings if you prefer.
 
 - **No telemetry, analytics, crash reporting, or update pings.** The app
   makes no network requests at all.
-- The only external programs it runs are Windows' own `winget`, and only
-  when you use the Updates tab (Phase 5), and `Dism.exe`, only when you click
-  **Deep clean**.
+- The only external programs it runs are Windows' own `winget` (the Windows
+  Package Manager), only in the Updates tab, and `Dism.exe`, only when you
+  click **Deep clean**. winget itself contacts its package sources to look
+  for updates and download them; that is winget's traffic, not the app's.
 - Settings, scan snapshots, and logs stay on your machine in
   `%LOCALAPPDATA%\WinFastCleaner\`. Logs contain paths and sizes only, and
   are rotated.
@@ -157,18 +156,37 @@ Settings if you prefer.
 | 2 | Rule files, built-in rules, tiered Cleaner tab, parallel deletion, recovery bin, exclusions, safety rules, `--dry-run` | **Built** |
 | 3 | Large/old file finder, duplicate finder, "What grew" | **Built** |
 | 4 | Privacy cleaning, secure delete | **Built** (Windows traces; browser history and cookies deferred) |
-| 5 | Startup manager, winget updater, health check, Home dashboard | Planned |
-| 6 | Scheduled cleaning, tray monitor, settings, installer, docs | Planned |
+| 5 | Startup manager, winget updater, health check, Home dashboard | **Built** (CPU/GPU temperatures deferred) |
+| 6 | Scheduled cleaning, tray monitor, settings, installer, docs | **Built** |
 
 ## Using it today
 
-There are no installers yet (they arrive in Phase 6). Build from source as
-described below.
+### Install
+
+Download `WinFastCleaner_<version>_x64-setup.exe` from the
+[Releases](https://github.com/CharlieMcNabb1/WinFastCleaner/releases) page and
+check it against `SHA256SUMS.txt` (see [Windows SmartScreen](#windows-smartscreen)).
+It installs for all users into `C:\Program Files\WinFastCleaner` (one
+administrator prompt), with a Start menu entry. The command-line tool `wfc.exe`
+is installed next to the app.
+
+**Uninstalling** (Settings > Apps, or the Start menu) removes the program, the
+scheduled cleaning task, and the tray monitor's sign-in entry. It keeps
+`%LOCALAPPDATA%\WinFastCleaner` (your settings, logs, and the **recovery bin,
+which may still hold your files**): restore anything you want first, then
+delete that folder yourself.
+
+Or build it from source as described [below](#building-from-source).
 
 ### Desktop app
 
-- **Disk** opens first and immediately scans your system drive. Pick another
-  drive or **Scan a folder…**. Click folders in the tree, treemap, or table
+- **Home** opens first: the health check, your drives' free space, how much
+  junk can be cleaned (with **Clean safe items**, which opens the exact list
+  of safe items to confirm), and the top three folders that grew since the
+  previous scan. On every launch the app scans your system drive and looks
+  for junk, with no setup wizard.
+- **Disk** shows what is using space on the drive scanned at launch. Pick
+  another drive or **Scan a folder…**. Click folders in the tree, treemap, or table
   to drill in. Each item shows its size, size on disk, share of its folder
   and of the drive, file count, and last-modified date. Right-click (or use
   **⋯**) to show an item in File Explorer, copy its path, **send it to the
@@ -197,12 +215,25 @@ described below.
   it.
 - **Privacy** clears Windows traces, each on its own and none ticked by
   default (see [Privacy tab](#privacy-tab)).
+- **Startup** lists what starts when you sign in: the registry Run keys
+  (yours and the machine's), the Startup folders, and scheduled tasks that
+  run at sign-in, each with its publisher, command, and where it comes from.
+  Turning one off uses the same switch as Task Manager, so it can be turned
+  back on; nothing is ever deleted. Items that start for every user need
+  administrator rights to change. Services set to start automatically are
+  listed separately, read-only (Windows' own services are left out).
+- **Updates** lists installed apps with newer versions, using winget.
+  Nothing is picked for you; tick the apps and **Update selected** runs each
+  update in turn with a per-app result. If winget isn't installed, the tab
+  explains how to get it (App Installer, from the Microsoft Store) instead.
 - **Recover** lists recovery bin batches, newest first, with bin usage per
   drive. Restore a whole batch or chosen files, delete a batch, or empty the
   bin.
-- **Settings**: send safe items to the bin too, secure delete, recovery bin
-  limits, how long to keep scan snapshots, your exclusions (folders, files, and patterns
-  such as `*.psd`), and your custom rules folder.
+- **Settings**: theme (same as Windows, light, or dark), send safe items to
+  the bin too, [scheduled cleaning](#scheduled-cleaning), the
+  [tray monitor](#tray-monitor), secure delete, recovery bin limits, how long
+  to keep scan snapshots, health check thresholds, your exclusions (folders,
+  files, and patterns such as `*.psd`), and your custom rules folder.
 
 When the app isn't running as administrator, it says so and offers **Restart
 as administrator** for the fast MFT scan and admin-only cleaning.
@@ -261,6 +292,50 @@ own, nothing is ticked by default, and contents are never read:
 Browser history, cookies, saved form data, and sessions aren't included yet.
 Browser **caches** are cleaned in the Cleaner tab.
 
+### Health check
+
+The health check on Home is read-only: it never changes anything, and each
+problem links to the tab where it can be fixed. Every check is green (Good),
+yellow (Attention), red (Problem), or Unknown, always shown with a label.
+
+| Check | Source | Yellow / red (defaults, change them in Settings) |
+|---|---|---|
+| Disk space | Each fixed drive's free space | Under 15% free / under 5% |
+| Junk | The last junk scan | Over 5 GB cleanable / over 20 GB |
+| Startup apps | The Startup tab | Over 10 turned on / over 20 |
+| Drive health | Windows' own drive health report, plus wear and SMART sector counts when Windows lets the app read them (usually as administrator) | A warning, SSD wear over 80%, or reallocated, pending, or unreadable sectors / Windows reports the drive is failing |
+| Temperatures | Not available yet: reading CPU and GPU sensors needs a hardware driver, which the app doesn't install | Always "Unknown" |
+| App updates | The last check in the Updates tab | Any update available |
+| Recovery bin | The recovery bin | 90% of its size limit |
+
+### Scheduled cleaning
+
+Off by default. In Settings, pick every day or every week, a time, and what
+to clean: **safe items only** (the default), or safe and optional items
+(optional items go to the recovery bin), and either every rule of those kinds
+or only rules you pick. It is a Windows Task Scheduler task
+(`\WinFastCleaner\Scheduled cleaning`) that runs the command-line tool
+without a window (`wfcw.exe clean --scheduled`, the same as
+`wfc clean --scheduled`):
+
+- It runs as you, without administrator rights, so items that need admin are
+  skipped and listed, and so are items whose app is open.
+- Review (red) items are never cleaned on a schedule.
+- If the PC is off at that time, it runs soon after it starts.
+- Nobody is asked anything; Settings shows what the last run did, and every
+  file is in the log.
+
+### Tray monitor
+
+Off by default. When turned on in Settings, a small separate program
+(`wfc-tray.exe`, no web view) starts when you sign in and shows an icon in the
+notification area. Every hour it runs the health check (and looks for junk at
+most every six hours) and notifies you when a drive is low on space, when junk
+piles up, or when a check turns red, each at most once a day, using the
+health check thresholds from Settings. It only looks: it never cleans or
+changes anything. Right-click the icon to open the app, check now, or quit
+until the next sign-in.
+
 ### Secure delete
 
 Off by default. Turn on **Offer secure delete** in Settings, and the Cleaner
@@ -295,9 +370,10 @@ documented in [docs/rule-format.md](docs/rule-format.md); check a file with
 
 Builds are **not code-signed** yet, so Windows SmartScreen will warn that the
 app is from an "unknown publisher" when you run a downloaded build. That is
-expected for unsigned open-source software. Release builds come from CI and
-publish SHA-256 checksums that you can verify with
-`Get-FileHash .\file.exe -Algorithm SHA256`.
+expected for unsigned open-source software. Release builds are made by CI
+(`.github/workflows/release.yml`), which also installs and uninstalls each
+installer as a test, and publishes SHA-256 checksums (`SHA256SUMS.txt`) that
+you can compare with `Get-FileHash .\file.exe -Algorithm SHA256`.
 
 ## Building from source
 
@@ -316,6 +392,9 @@ npm run tauri dev
 
 # UI only, in a browser, with fake data (no Rust needed)
 npm run dev:mock
+
+# The installer (from the repository root, after npm ci in app/)
+scripts/build-installer.ps1
 ```
 
 Run the tests with `cargo test --workspace` and `npm test --prefix app`. See
@@ -326,12 +405,13 @@ that run on Linux.
 
 | Path | What it is |
 |---|---|
-| `crates/core` | Rust library: scanner, MFT reader, snapshots, safety guard, rules engine, deletion, and recovery bin. No UI code. |
-| `crates/cli` | `wfc` command-line tool built on `core`. Scheduled cleaning will use it. |
+| `crates/core` | Rust library: scanner, MFT reader, snapshots, safety guard, rules engine, deletion, recovery bin, privacy cleaning, startup manager, winget, health check, and scheduled cleaning. No UI code. |
+| `crates/cli` | `wfc` command-line tool built on `core`, and `wfcw`, the same scheduled clean without a console window (what the scheduled task runs) |
+| `crates/tray` | `wfc-tray`, the tray monitor (a small Windows program, no web view) |
 | `app/` | Tauri desktop app (Svelte + TypeScript frontend in `app/src`, Rust backend in `app/src-tauri`) |
 | `rules/` | Built-in cleaning rule files ([format](docs/rule-format.md)) |
 | `docs/` | [Architecture](docs/architecture.md), [safety model](docs/safety-model.md), and [rule file format](docs/rule-format.md) |
-| `scripts/` | Developer scripts (NTFS test image) |
+| `scripts/` | Developer and CI scripts: NTFS test image, building and testing the installer |
 
 ## Security
 

@@ -85,6 +85,15 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Remove the scheduled cleaning task and the tray monitor's sign-in
+    /// entry, and close the tray (used by the uninstaller). Your settings,
+    /// logs, and recovery bin are kept.
+    #[command(hide = true)]
+    RemoveIntegration,
+    /// Close the tray monitor if it is running (used by the installer before
+    /// replacing its program).
+    #[command(hide = true)]
+    CloseTray,
 }
 
 fn main() -> ExitCode {
@@ -115,6 +124,14 @@ fn main() -> ExitCode {
         Command::Dupes(args) => files::dupes_cmd(args),
         Command::Grew(args) => files::grew_cmd(args),
         Command::Snapshots { json } => files::snapshots_cmd(json),
+        Command::RemoveIntegration => remove_integration(),
+        Command::CloseTray => {
+            if cleaner_core::integration::close_tray() {
+                // Give it a moment to remove its icon and exit.
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+            Ok(())
+        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -126,6 +143,19 @@ fn main() -> ExitCode {
 }
 
 pub(crate) type CliResult = Result<(), Box<dyn std::error::Error>>;
+
+fn remove_integration() -> CliResult {
+    let problems = cleaner_core::integration::remove_all();
+    for p in &problems {
+        eprintln!("warning: {p}");
+    }
+    if problems.is_empty() {
+        println!("Removed the scheduled cleaning task and the tray monitor's sign-in entry.");
+        Ok(())
+    } else {
+        Err("some parts could not be removed".into())
+    }
+}
 
 fn drives(json: bool) -> CliResult {
     let drives = platform::drives();
@@ -411,15 +441,7 @@ pub(crate) fn files(n: u64) -> String {
 
 /// 1234567 -> "1,234,567"
 pub(crate) fn group(n: u64) -> String {
-    let s = n.to_string();
-    let mut out = String::with_capacity(s.len() + s.len() / 3);
-    for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
+    cleaner_core::format::format_count(n)
 }
 
 pub(crate) fn truncate(s: &str, max: usize) -> String {

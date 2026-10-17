@@ -11,6 +11,7 @@ import type {
   FileKind,
   FindEvent,
   FindRequest,
+  HealthView,
   JunkEvent,
   JunkItemsPage,
   ManualPlanView,
@@ -21,13 +22,21 @@ import type {
   RestoreReport,
   RuleSelection,
   ScanEvent,
+  Schedule,
+  ScheduleView,
   Settings,
   SettingsView,
   SnapshotView,
+  StartupItem,
+  StartupView,
   Trace,
   TraceInfo,
   TraceResult,
+  TrayView,
   TreemapNode,
+  UpdateEvent,
+  UpdatesStatus,
+  Upgrade,
 } from "./types.ts";
 
 /** Everything the UI can ask of the backend. */
@@ -89,6 +98,31 @@ export interface Backend {
   // Privacy (Windows traces)
   privacySurvey(): Promise<TraceInfo[]>;
   privacyClear(traces: Trace[]): Promise<TraceResult[]>;
+
+  // Startup
+  startupList(): Promise<StartupView>;
+  /** Turns an item on or off (never deletes it) and returns it as it is now. */
+  startupSetEnabled(id: string, enabled: boolean): Promise<StartupItem>;
+
+  // App updates (winget)
+  updatesStatus(): Promise<UpdatesStatus>;
+  /** Asks winget for updates (can take a minute). */
+  updatesList(): Promise<Upgrade[]>;
+  /** Updates apps from the latest list, one at a time. */
+  updatesApply(ids: string[], onEvent: (e: UpdateEvent) => void): Promise<void>;
+  /** Stops checking, or stops updating after the current app. */
+  updatesCancel(): Promise<void>;
+
+  // Health check (read-only)
+  healthCheck(): Promise<HealthView>;
+
+  // Scheduled cleaning and the tray monitor
+  scheduleStatus(): Promise<ScheduleView>;
+  /** Saves the schedule and creates, updates, or removes the task. */
+  scheduleSave(schedule: Schedule): Promise<ScheduleView>;
+  trayStatus(): Promise<TrayView>;
+  /** Turns the tray monitor (and its sign-in entry) on or off. */
+  traySet(enabled: boolean): Promise<TrayView>;
 }
 
 let instance: Promise<Backend> | null = null;
