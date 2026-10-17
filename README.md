@@ -88,7 +88,7 @@ permanently deleted first. The defaults are 5 GB or 10% of the drive
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Workspace, scanner (parallel walk and NTFS MFT), Disk tab with tree and treemap, scan snapshots | **In progress** |
+| 1 | Workspace, scanner (parallel walk and NTFS MFT), Disk tab with tree and treemap, scan snapshots | **Built, verifying on Windows** |
 | 2 | Rule files, built-in rules, tiered Cleaner tab, parallel deletion, recovery bin, exclusions, safety rules, `--dry-run` | Planned |
 | 3 | Large/old file finder, duplicate finder, "What grew" | Planned |
 | 4 | Privacy cleaning, secure delete | Planned |
@@ -97,18 +97,44 @@ permanently deleted first. The defaults are 5 GB or 10% of the drive
 
 ## Using it today (Phase 1)
 
-There are no installers yet. Build from source as described below. The CLI
-can scan a folder or drive:
+There are no installers yet (they arrive in Phase 6). Build from source as
+described below.
+
+**Desktop app:** opens on the **Disk** tab and immediately scans your system
+drive. Pick another drive or **Scan a folder…** to scan something else.
+Click folders in the tree, treemap, or table to drill in. Each item shows
+its size, size on disk, share of its folder and of the drive, file count,
+and last-modified date. Right-click (or use **⋯**) to show an item in File
+Explorer or copy its path. When the app isn't running as administrator, it
+says so and offers **Restart as administrator** for the fast MFT scan.
+
+**CLI (`wfc`):**
 
 ```powershell
-wfc drives                     # list drives with free/used space
-wfc scan C:\                   # scan, print the biggest folders
-wfc scan D:\Projects --top 30 --depth 2
-wfc scan C:\ --json > scan.json
+wfc drives                                  # drives with size and free space
+wfc scan C:\                                # biggest folders and files
+wfc scan D:\Projects --top 30 --depth 2     # more entries, two levels
+wfc scan C:\ --json > scan.json             # machine-readable output
+wfc scan C:\ --no-mft                       # always use the folder walker
 ```
 
 Run from an elevated (administrator) terminal to use the fast MFT scan on
-NTFS drives. Without admin rights it uses the parallel walker automatically.
+NTFS drives. Without admin rights the parallel walker is used automatically.
+Each scan saves a small snapshot of folder sizes (used by "What grew" in
+Phase 3). Pass `--no-snapshot` to skip it.
+
+### What "size" means
+
+- **Size** is the logical size. **On disk** is the space actually allocated.
+  Small files stored inside the MFT take 0 bytes on disk, compressed and
+  sparse files take less than their size, and cloud-only OneDrive files take
+  none.
+- **Hard links are counted once.** Folders that contain hard-linked files
+  (for example `C:\Windows\WinSxS`) are marked with an icon, because File
+  Explorer counts every name and so shows them as bigger than they are.
+- **Links are never followed.** Junctions and symlinks show as links with
+  0 bytes, so nothing is counted twice and scans can't loop.
+- Folders that couldn't be read are marked, and the summary lists them.
 
 ### Windows SmartScreen
 
@@ -132,6 +158,9 @@ cargo run -p cleaner-cli --release -- scan C:\
 cd app
 npm ci
 npm run tauri dev
+
+# UI only, in a browser, with fake data (no Rust needed)
+npm run dev:mock
 ```
 
 Run the tests with `cargo test --workspace` and `npm test --prefix app`. See
@@ -146,7 +175,8 @@ that run on Linux.
 | `crates/cli` | `wfc` command-line tool built on `core`. Scheduled cleaning will use it. |
 | `app/` | Tauri desktop app (Svelte + TypeScript frontend in `app/src`, Rust backend in `app/src-tauri`) |
 | `rules/` | Built-in cleaning rule files (Phase 2) |
-| `docs/` | Architecture, safety model, and (Phase 2) rule file format |
+| `docs/` | [Architecture](docs/architecture.md), [safety model](docs/safety-model.md), and (Phase 2) rule file format |
+| `scripts/` | Developer scripts (NTFS test image) |
 
 ## Security
 
