@@ -3,6 +3,7 @@
 
   import type { Backend } from "../lib/backend.ts";
   import { CATEGORY_LABELS, type Category, category, formatPercent, formatSize } from "../lib/format.ts";
+  import { isDark } from "../lib/theme.svelte.ts";
   import { type Rect, squarify } from "../lib/treemap.ts";
   import type { TreemapNode } from "../lib/types.ts";
 
@@ -49,7 +50,7 @@
   let error = $state<string | null>(null);
   let width = $state(0);
   let height = $state(0);
-  let dark = $state(false);
+  let dark = $derived(isDark());
   let hover = $state<{ x: number; y: number; hit: Hit } | null>(null);
   let hits: Hit[] = [];
 
@@ -74,14 +75,7 @@
       height = Math.floor(entry.contentRect.height);
     });
     ro.observe(container);
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    dark = mq.matches;
-    const onTheme = (e: MediaQueryListEvent) => (dark = e.matches);
-    mq.addEventListener("change", onTheme);
-    return () => {
-      ro.disconnect();
-      mq.removeEventListener("change", onTheme);
-    };
+    return () => ro.disconnect();
   });
 
   $effect(() => {

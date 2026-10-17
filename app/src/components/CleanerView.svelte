@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
 
   import { type Backend, backend, errorMessage } from "../lib/backend.ts";
@@ -13,7 +14,8 @@
     statusText,
   } from "../lib/cleaner.ts";
   import { formatDuration, formatSize } from "../lib/format.ts";
-  import type { AppInfo, CleanReport, JunkItem, JunkView, PlanView, RuleView } from "../lib/types.ts";
+  import { cancelJunkScan, junkScan, scanJunk } from "../lib/junk.svelte.ts";
+  import type { AppInfo, CleanerFocus, CleanReport, JunkItem, JunkView, PlanView, RuleView } from "../lib/types.ts";
   import CleanResult from "./CleanResult.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -22,21 +24,31 @@
   let {
     info,
     active,
+    focus,
     onNavigate,
   }: {
     info: AppInfo | null;
     active: boolean;
+    /**
+     * A rule to scroll to and highlight (from "What grew"), or "safe" to pick
+     * only the safe (green) items and show the preview (from Home).
+     */
+    focus: CleanerFocus | null;
     onNavigate: (tab: "recover") => void;
   } = $props();
 
   let api = $state<Backend | null>(null);
+  /** The scan the selection belongs to (the shared scan, once applied). */
   let junk = $state<JunkView | null>(null);
-  let scanning = $state(false);
+  let scanning = $derived(junkScan.scanning);
   let error = $state<string | null>(null);
   const selected = new SvelteSet<string>();
   const deselected: Deselected = new SvelteMap();
 
   let plan = $state<PlanView | null>(null);
+  /** Secure delete is offered (Settings) and chosen for this clean. */
+  let secureOffered = $state(false);
+  let secure = $state(false);
   let preparing = $state(false);
   let cleaning = $state<{ done: number; total: number } | null>(null);
   let result = $state<CleanReport | null>(null);
@@ -52,30 +64,59 @@
   let isWindows = $derived(info?.platform === "windows");
   let elevated = $derived(info?.elevated ?? false);
 
-  // The first visit to the tab starts a scan.
+  let highlighted = $state<string | null>(null);
+  let lastFocus = 0;
+  $effect(() => {
+    const f = focus;
+    if (!f || f.seq === lastFocus || !junk) return;
+    lastFocus = f.seq;
+    if (f.kind === "safe") {
+      untrack(() => pickSafe());
+      return;
+    }
+    highlighted = f.ruleId;
+    // Wait for the row to render, then bring it into view.
+    requestAnimationFrame(() =>
+      document.getElementById(`rule-${f.ruleId}`)?.scrollIntoView({ block: "center", behavior: "smooth" }),
+    );
+    setTimeout(() => {
+      if (highlighted === f.ruleId) highlighted = null;
+    }, 2500);
+  });
+
+  // The first visit to the tab scans, unless Home already did.
   let started = false;
   $effect(() => {
     if (active && !started) {
       started = true;
-      void scan();
+      void (async () => {
+        api ??= await backend();
+        if (!untrack(() => junkScan.view || junkScan.scanning)) await scan();
+      })();
     }
+  });
+
+  // Each finished scan (from here or from Home) replaces the results.
+  $effect(() => {
+    const view = junkScan.view;
+    if (view && view !== untrack(() => junk)) untrack(() => applyResults(view));
+  });
+  $effect(() => {
+    if (junkScan.error) error = junkScan.error;
   });
 
   async function scan() {
     api ??= await backend();
-    if (scanning) return;
-    scanning = true;
-    error = null;
-    try {
-      await api.startJunkScan((e) => {
-        scanning = false;
-        if (e.type === "done") applyResults(e.result);
-        else if (e.type === "failed") error = e.message;
-      });
-    } catch (e) {
-      scanning = false;
-      error = errorMessage(e);
-    }
+    await scanJunk();
+  }
+
+  /** Only the safe items, then straight to the preview. */
+  function pickSafe() {
+    if (!junk) return;
+    selected.clear();
+    deselected.clear();
+    for (const r of junk.rules) if (selectedByDefault(r)) selected.add(r.id);
+    if (selected.size > 0) void preview();
   }
 
   function applyResults(view: JunkView) {
@@ -110,14 +151,18 @@
   }
 
   async function preview() {
-    if (!api || !junk) return;
+    api ??= await backend();
+    if (!junk) return;
     preparing = true;
     error = null;
     try {
       const selection = junk.rules
         .filter((r) => selected.has(r.id) && isReady(r))
         .map((r) => ({ ruleId: r.id, deselected: [...(deselected.get(r.id)?.keys() ?? [])] }));
-      plan = await api.cleanPreview(junk.scanId, selection);
+      const [preview, settings] = await Promise.all([api.cleanPreview(junk.scanId, selection), api.getSettings()]);
+      secureOffered = settings.settings.secureDelete;
+      secure = false;
+      plan = preview;
     } catch (e) {
       error = errorMessage(e);
     } finally {
@@ -132,7 +177,7 @@
     result = null;
     cleaning = { done: 0, total: 0 };
     try {
-      await api.cleanExecute(planId, (e) => {
+      await api.cleanExecute(planId, secure, (e) => {
         switch (e.type) {
           case "progress":
             cleaning = { done: e.done, total: e.total };
@@ -260,7 +305,7 @@
     <section class="card running" aria-live="polite">
       <div class="running-head">
         <strong>Looking for junk…</strong>
-        <button class="btn" onclick={() => api?.cancelJunkScan()}><Icon name="x" /> Cancel</button>
+        <button class="btn" onclick={cancelJunkScan}><Icon name="x" /> Cancel</button>
       </div>
       <div class="progress-track" role="progressbar" aria-label="Scanning for junk">
         <span class="progress-fill indeterminate"></span>
@@ -307,6 +352,7 @@
                 {api}
                 scanId={junk.scanId}
                 {rule}
+                highlight={highlighted === rule.id}
                 checked={selected.has(rule.id)}
                 deselected={deselected.get(rule.id) as SvelteMap<number, number> | undefined}
                 disabled={busy}
@@ -385,17 +431,24 @@
   {#if plan}
     <p>The exact list was just built from your selection. Only these files are touched.</p>
     <ul class="plan">
-      {#if plan.deleteCount > 0}
+      {#if secure}
         <li>
-          <strong>{sizeAndCount(plan.deleteBytes, plan.deleteCount)}</strong> deleted now. These are safe items that
-          rebuild on their own.
+          <strong>{sizeAndCount(plan.totalSize, plan.count)}</strong> overwritten, then deleted. Nothing goes to the recovery
+          bin, so these can't be restored.
         </li>
-      {/if}
-      {#if plan.binCount > 0}
-        <li>
-          <strong>{sizeAndCount(plan.binBytes, plan.binCount)}</strong> moved to the recovery bin, where you can restore them.
-          Their space is freed when the bin is emptied or the batch expires.
-        </li>
+      {:else}
+        {#if plan.deleteCount > 0}
+          <li>
+            <strong>{sizeAndCount(plan.deleteBytes, plan.deleteCount)}</strong> deleted now. These are safe items that
+            rebuild on their own.
+          </li>
+        {/if}
+        {#if plan.binCount > 0}
+          <li>
+            <strong>{sizeAndCount(plan.binBytes, plan.binCount)}</strong> moved to the recovery bin, where you can restore them.
+            Their space is freed when the bin is emptied or the batch expires.
+          </li>
+        {/if}
       {/if}
     </ul>
     {#if plan.notReady.length > 0}
@@ -404,6 +457,15 @@
         {#each plan.notReady as n, i (n.ruleId)}{i > 0 ? "; " : ""}{junk?.rules.find((r) => r.id === n.ruleId)?.name ??
             n.ruleId} ({statusText(n.status).toLowerCase()}){/each}.
       </p>
+    {/if}
+    {#if secureOffered}
+      <label class="secure">
+        <input type="checkbox" bind:checked={secure} />
+        <span>
+          <strong>Secure delete:</strong> overwrite these files before deleting them, so they can't be recovered. Slower;
+          nothing goes to the recovery bin, so they can't be restored; less effective on SSDs.
+        </span>
+      </label>
     {/if}
     <p class="muted small">Files that are in use or changed since the scan are skipped and listed afterwards.</p>
   {/if}
@@ -537,5 +599,14 @@
   }
   .plan li {
     margin: 4px 0;
+  }
+  .secure {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 8px 10px;
+    border: 1px solid var(--alert-border);
+    border-radius: var(--radius);
+    background: var(--alert-bg);
   }
 </style>

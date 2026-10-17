@@ -19,6 +19,7 @@ use tauri::{AppHandle, Manager, State};
 use cleaner_core::cleaner::{
     self, CleanPlan, CleanReport, Context, ExecOptions, PlanItem, Rejected, RuleStatus,
 };
+use cleaner_core::health::{self, JunkSummary};
 use cleaner_core::progress::CancelToken;
 use cleaner_core::recovery::RecoveryStore;
 use cleaner_core::rules::{self, RuleError, RuleSource, Tier};
@@ -154,6 +155,10 @@ pub fn start_junk_scan(
                 );
                 let mut scan = cleaner::scan(&set.rules, &ctx, &cancel);
                 scan.errors = set.errors;
+                if !cancel.is_cancelled() {
+                    // For the health check and the tray.
+                    let _ = health::save_junk(&data, &JunkSummary::from_scan(&scan));
+                }
                 Ok((scan, ctx.elevated))
             }));
             let state = app.state::<AppState>();
@@ -397,6 +402,23 @@ pub fn clean_manual(
     }
     let (_, settings, ctx) = context()?;
     let (plan, rejected) = cleaner::plan_manual(&paths, &ctx);
+    Ok(manual_view(
+        &state,
+        plan,
+        rejected,
+        "Disk view",
+        settings.green_to_bin,
+    ))
+}
+
+/// Stores a plan of hand-picked (red) items and describes it for the UI.
+pub(crate) fn manual_view(
+    state: &AppState,
+    plan: CleanPlan,
+    rejected: Vec<Rejected>,
+    label: &'static str,
+    green_to_bin: bool,
+) -> ManualPlanView {
     let mut largest: Vec<&PlanItem> = plan.items.iter().collect();
     largest.sort_by_key(|i| std::cmp::Reverse(i.size));
     let sample = largest
@@ -407,12 +429,12 @@ pub fn clean_manual(
             size: i.size,
         })
         .collect();
-    let view = store_plan(&state, plan, "Disk view", settings.green_to_bin);
-    Ok(ManualPlanView {
+    let view = store_plan(state, plan, label, green_to_bin);
+    ManualPlanView {
         plan: view,
         sample,
         rejected,
-    })
+    }
 }
 
 // ------------------------------------------------------------ execute
@@ -435,8 +457,12 @@ pub fn clean_execute(
     app: AppHandle,
     state: State<'_, AppState>,
     plan_id: u64,
+    secure: bool,
     on_event: Channel<CleanEvent>,
 ) -> CmdResult<()> {
+    if secure && !Settings::load(&data_dir()?).secure_delete {
+        return Err("Secure delete is turned off in Settings.".into());
+    }
     let (previewed, cancel) = {
         let mut s = state.lock();
         if s.cleaning.is_some() {
@@ -465,6 +491,8 @@ pub fn clean_execute(
                 let opts = ExecOptions {
                     green_to_bin: previewed.green_to_bin,
                     label: previewed.label.to_string(),
+                    // Red items still go to the bin (enforced in core).
+                    secure,
                 };
                 let progress = |done: u64, total: u64| {
                     let _ = on_event.send(CleanEvent::Progress { done, total });

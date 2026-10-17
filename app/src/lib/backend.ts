@@ -4,9 +4,14 @@ import type {
   ChildrenPage,
   ChildrenQuery,
   CleanEvent,
+  ComparisonView,
   Conflict,
   DeepCleanEvent,
   DriveInfo,
+  FileKind,
+  FindEvent,
+  FindRequest,
+  HealthView,
   JunkEvent,
   JunkItemsPage,
   ManualPlanView,
@@ -17,9 +22,21 @@ import type {
   RestoreReport,
   RuleSelection,
   ScanEvent,
+  Schedule,
+  ScheduleView,
   Settings,
   SettingsView,
+  SnapshotView,
+  StartupItem,
+  StartupView,
+  Trace,
+  TraceInfo,
+  TraceResult,
+  TrayView,
   TreemapNode,
+  UpdateEvent,
+  UpdatesStatus,
+  Upgrade,
 } from "./types.ts";
 
 /** Everything the UI can ask of the backend. */
@@ -45,7 +62,8 @@ export interface Backend {
   cleanPreview(scanId: number, selection: RuleSelection[]): Promise<PlanView>;
   /** Plans items picked in the Disk view (always red tier, always to the bin). */
   cleanManual(scanId: number, nodeIds: number[]): Promise<ManualPlanView>;
-  cleanExecute(planId: number, onEvent: (e: CleanEvent) => void): Promise<void>;
+  /** `secure` overwrites green and yellow files first (only when offered in Settings). */
+  cleanExecute(planId: number, secure: boolean, onEvent: (e: CleanEvent) => void): Promise<void>;
   cancelClean(): Promise<void>;
   deepClean(onEvent: (e: DeepCleanEvent) => void): Promise<void>;
 
@@ -54,14 +72,57 @@ export interface Backend {
   recoveryBatch(batchId: string): Promise<Batch>;
   recoveryConflicts(batchId: string, itemIds: number[] | null): Promise<string[]>;
   recoveryRestore(batchId: string, itemIds: number[] | null, conflict: Conflict): Promise<RestoreReport>;
-  recoveryDelete(batchId: string): Promise<PurgeReport>;
-  recoveryEmpty(): Promise<PurgeReport>;
+  recoveryDelete(batchId: string, secure: boolean): Promise<PurgeReport>;
+  recoveryEmpty(secure: boolean): Promise<PurgeReport>;
 
   // Settings
   getSettings(): Promise<SettingsView>;
   saveSettings(settings: Settings): Promise<SettingsView>;
   excludeNode(scanId: number, nodeId: number): Promise<void>;
   openRulesFolder(): Promise<void>;
+
+  // Files tab (large/old files and duplicates)
+  startFind(path: string, request: FindRequest, rescan: boolean, onEvent: (e: FindEvent) => void): Promise<void>;
+  startDupes(path: string, minSize: number, kinds: FileKind[], rescan: boolean, onEvent: (e: FindEvent) => void): Promise<void>;
+  cancelFind(): Promise<void>;
+  filesPlan(findId: number, indexes: number[]): Promise<ManualPlanView>;
+  /** Picks are [group, file] pairs. Refused if a group would lose every copy. */
+  dupesPlan(dupesId: number, picks: [number, number][]): Promise<ManualPlanView>;
+
+  // What grew
+  listSnapshots(): Promise<SnapshotView[]>;
+  compareSnapshots(older: string, newer: string): Promise<ComparisonView>;
+  /** Finds a path in a Disk scan; null when it isn't in that scan. */
+  locateNode(scanId: number, path: string): Promise<number | null>;
+
+  // Privacy (Windows traces)
+  privacySurvey(): Promise<TraceInfo[]>;
+  privacyClear(traces: Trace[]): Promise<TraceResult[]>;
+
+  // Startup
+  startupList(): Promise<StartupView>;
+  /** Turns an item on or off (never deletes it) and returns it as it is now. */
+  startupSetEnabled(id: string, enabled: boolean): Promise<StartupItem>;
+
+  // App updates (winget)
+  updatesStatus(): Promise<UpdatesStatus>;
+  /** Asks winget for updates (can take a minute). */
+  updatesList(): Promise<Upgrade[]>;
+  /** Updates apps from the latest list, one at a time. */
+  updatesApply(ids: string[], onEvent: (e: UpdateEvent) => void): Promise<void>;
+  /** Stops checking, or stops updating after the current app. */
+  updatesCancel(): Promise<void>;
+
+  // Health check (read-only)
+  healthCheck(): Promise<HealthView>;
+
+  // Scheduled cleaning and the tray monitor
+  scheduleStatus(): Promise<ScheduleView>;
+  /** Saves the schedule and creates, updates, or removes the task. */
+  scheduleSave(schedule: Schedule): Promise<ScheduleView>;
+  trayStatus(): Promise<TrayView>;
+  /** Turns the tray monitor (and its sign-in entry) on or off. */
+  traySet(enabled: boolean): Promise<TrayView>;
 }
 
 let instance: Promise<Backend> | null = null;

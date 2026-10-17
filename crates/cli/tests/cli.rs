@@ -303,6 +303,19 @@ fn clean_then_restore_round_trip() {
 }
 
 #[test]
+fn secure_clean_overwrites_and_skips_the_bin() {
+    let s = sandbox();
+    let out = s.clean(&["--tier", "yellow", "--yes", "--secure", "--json"]);
+    let report: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    assert_eq!(report["deletedCount"], 3, "{report}");
+    assert_eq!(report["wipedCount"], 3, "{report}");
+    assert_eq!(report["binnedCount"], 0, "{report}");
+    assert!(!s.exists("App/Logs/x.log"));
+    let out = s.wfc().args(["recover", "list"]).output().unwrap();
+    assert!(ok(&out).contains("empty"));
+}
+
+#[test]
 fn exclusions_win_over_rules() {
     let s = sandbox();
     let keep = s.local.join("App/Cache/a.bin");
@@ -328,4 +341,287 @@ fn unknown_rules_are_an_error() {
     let out = s.clean(&["--rule", "nope", "--dry-run"]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("no rule named"));
+}
+
+// ------------------------------------------------------------ files
+
+fn sized(path: &std::path::Path, len: u64) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::File::create(path).unwrap().set_len(len).unwrap();
+}
+
+#[test]
+fn dupes_are_matched_by_full_contents() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap();
+    let body: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+    let mut almost = body.clone();
+    almost[150_000] ^= 1; // same size, start, and end; different middle
+    for (rel, data) in [
+        ("a/one.bin", &body),
+        ("b/two.bin", &body),
+        ("c/almost.bin", &almost),
+    ] {
+        let p = root.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, data).unwrap();
+    }
+    let out = wfc(&root)
+        .args([
+            "dupes",
+            "--no-mft",
+            "--no-snapshot",
+            "--json",
+            "--min-size",
+            "1KB",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    let groups = v["groups"].as_array().unwrap();
+    assert_eq!(groups.len(), 1, "{v}");
+    let names: Vec<&str> = groups[0]["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(names.len(), 2);
+    assert!(names[0].ends_with("one.bin") && names[1].ends_with("two.bin"));
+    assert_eq!(v["wasted"], 300_000);
+    // Nothing was changed.
+    assert!(root.join("a/one.bin").exists() && root.join("b/two.bin").exists());
+}
+
+#[test]
+fn find_large_and_old_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap().join("disk");
+    sized(&root.join("videos/movie.mkv"), 300 << 20);
+    sized(&root.join("setup.exe"), 120 << 20);
+    sized(&root.join("small.txt"), 10);
+    let out = wfc(tmp.path())
+        .args(["find", "large", "--no-mft", "--no-snapshot", "--json"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    let files = v["files"].as_array().unwrap();
+    assert_eq!(files.len(), 2, "{v}");
+    assert!(files[0]["path"].as_str().unwrap().ends_with("movie.mkv"));
+    assert_eq!(files[0]["kind"], "video");
+
+    let out = wfc(tmp.path())
+        .args([
+            "find",
+            "large",
+            "--no-mft",
+            "--no-snapshot",
+            "--json",
+            "--kind",
+            "installer",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    assert_eq!(v["files"].as_array().unwrap().len(), 1);
+
+    // Nothing here is a year old.
+    let out = wfc(tmp.path())
+        .args(["find", "old", "--no-mft", "--no-snapshot", "--json"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    assert!(v["files"].as_array().unwrap().is_empty(), "{v}");
+}
+
+#[test]
+fn grew_lists_the_folder_that_grew() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap();
+    sized(&root.join("stable/a.bin"), 80 << 20);
+    sized(&root.join("apps/chat/cache/c.bin"), 60 << 20);
+    let scan = |data: &std::path::Path| {
+        let out = wfc(data)
+            .args(["scan", "--quiet", "--no-mft"])
+            .arg(&root)
+            .output()
+            .unwrap();
+        ok(&out);
+    };
+    scan(data.path());
+    // Snapshot names have one-second resolution.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    sized(&root.join("apps/chat/cache/d.bin"), 900 << 20);
+    sized(&root.join("new-game/data.pak"), 200 << 20);
+    scan(data.path());
+
+    let out = wfc(data.path())
+        .args(["snapshots", "--json"])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    assert_eq!(v.as_array().unwrap().len(), 2, "{v}");
+
+    let out = wfc(data.path())
+        .args(["grew", "--json"])
+        .arg(root.display().to_string())
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    let grew: Vec<(&str, i64)> = v["grew"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["path"].as_str().unwrap(), c["delta"].as_i64().unwrap()))
+        .collect();
+    assert_eq!(grew.len(), 2, "{v}");
+    assert!(
+        grew[0].0.ends_with("cache"),
+        "most specific folder: {grew:?}"
+    );
+    assert_eq!(grew[0].1, 900 << 20);
+    assert!(grew[1].0.ends_with("new-game"), "{grew:?}");
+    assert_eq!(v["totalDelta"], 1100 << 20);
+}
+
+// ---------------------------------------------------------------- scheduled
+
+/// Turns on scheduled cleaning in the sandbox's settings.
+fn enable_schedule(s: &Sandbox, extra: &str) {
+    let data = s.local.join("WinFastCleaner");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(
+        data.join("settings.json"),
+        format!(r#"{{"schedule": {{"enabled": true{extra}}}}}"#),
+    )
+    .unwrap();
+}
+
+fn last_run(s: &Sandbox) -> serde_json::Value {
+    let text = std::fs::read_to_string(s.local.join("WinFastCleaner/scheduled-last.json")).unwrap();
+    serde_json::from_str(&text).unwrap()
+}
+
+#[test]
+fn scheduled_cleaning_takes_safe_items_only() {
+    let s = sandbox();
+    let run = || {
+        s.wfc()
+            .args(["clean", "--scheduled", "--rules-dir"])
+            .arg(&s.rules)
+            .output()
+            .unwrap()
+    };
+    // Turned off (the default): nothing is touched.
+    assert!(ok(&run()).contains("turned off"));
+    assert!(s.exists("App/Cache/a.bin"));
+
+    enable_schedule(&s, "");
+    let text = ok(&run());
+    assert!(text.contains("Cleaned"), "{text}");
+    assert!(!s.exists("App/Cache/a.bin") && !s.exists("App/Cache/sub/b.bin"));
+    // Optional (yellow) items are only cleaned when the schedule says so.
+    assert!(s.exists("App/Logs/x.log"));
+    let last = last_run(&s);
+    assert_eq!(last["ok"], true);
+    assert_eq!(last["deletedCount"], 2);
+    assert_eq!(last["binnedCount"], 0);
+
+    // --scheduled can't be combined with choices of its own.
+    let out = s
+        .wfc()
+        .args(["clean", "--scheduled", "--yes"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+}
+
+#[test]
+fn windowless_cleaner_only_runs_the_schedule() {
+    let s = sandbox();
+    let wfcw = || {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_wfcw"));
+        c.env("LOCALAPPDATA", &s.local)
+            .env("XDG_DATA_HOME", &s.local)
+            .stdin(std::process::Stdio::null());
+        c
+    };
+    for bad in [
+        &["clean"][..],
+        &["clean", "--tier", "yellow", "--yes"],
+        &["recover", "empty", "--yes"],
+        &["clean", "--scheduled", "--yes"],
+    ] {
+        assert_eq!(
+            wfcw().args(bad).status().unwrap().code(),
+            Some(2),
+            "{bad:?}"
+        );
+    }
+    assert!(s.exists("App/Cache/a.bin"));
+
+    enable_schedule(&s, r#", "includeOptional": true"#);
+    let st = wfcw()
+        .args(["clean", "--scheduled", "--rules-dir"])
+        .arg(&s.rules)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    assert!(!s.exists("App/Cache/a.bin"));
+    // The optional log went to the recovery bin; the rule's other file stays.
+    assert!(!s.exists("App/Logs/x.log"));
+    assert!(s.exists("App/Logs/keep.txt"));
+    let last = last_run(&s);
+    assert_eq!(last["deletedCount"], 2);
+    assert_eq!(last["binnedCount"], 1);
+}
+
+/// Registers a real Task Scheduler task (in a throwaway folder), runs it, and
+/// checks it cleaned the sandbox's safe items only. The task sets the sandbox
+/// as %LOCALAPPDATA%, as the other tests do, and uses the test rules.
+#[cfg(windows)]
+#[test]
+fn a_scheduled_task_runs_and_cleans_safe_items_only() {
+    use cleaner_core::schedule::{self, Schedule};
+    use cleaner_core::wincom;
+
+    let s = sandbox();
+    enable_schedule(&s, "");
+    let folder = format!(r"\WinFastCleaner-test-{}", std::process::id());
+    let cmd =
+        std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join(r"System32\cmd.exe");
+    let args = format!(
+        r#"/d /s /c "set "LOCALAPPDATA={}" && "{}" clean --scheduled --rules-dir "{}"""#,
+        s.local.display(),
+        env!("CARGO_BIN_EXE_wfcw"),
+        s.rules.display()
+    );
+    let xml = schedule::task_xml(
+        &Schedule {
+            enabled: true,
+            ..Schedule::default()
+        },
+        &cmd,
+        &args,
+    );
+    wincom::register_task(&folder, "run", &xml).unwrap();
+    let ran = wincom::run_task(&folder, "run");
+    let last = s.local.join("WinFastCleaner/scheduled-last.json");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+    while ran.is_ok() && !last.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    // Let the run finish writing before cleaning up.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    wincom::delete_task(&folder, "run").unwrap();
+    ran.unwrap();
+    assert!(last.exists(), "the task didn't run");
+    assert!(!s.exists("App/Cache/a.bin") && !s.exists("App/Cache/sub/b.bin"));
+    assert!(s.exists("App/Logs/x.log"));
+    assert_eq!(last_run(&s)["deletedCount"], 2);
 }

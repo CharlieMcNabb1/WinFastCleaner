@@ -11,7 +11,7 @@ protection.
 | 1 | **Protected paths blocklist.** Never delete inside `C:\Windows` (except temp, log, and update-cache subfolders that rules list), `C:\Program Files`, `C:\Program Files (x86)`, `C:\ProgramData` (except rule-listed caches), the root of any drive, a user profile root, `WinSxS`, `System32`, boot and recovery folders, or the app's own files. Checked on the **final resolved path**, after expanding variables, symlinks, and junctions. | `safety::Guard`, called by the rules loader, the junk scan, the plan builder, and again by the executor on the path the open file handle reports. |
 | 2 | **No following links.** Never follow symlinks, junctions, or mount points while finding or deleting files. | `rules::expand_path`, `cleaner::scan`, `fsops::open` (opens the link itself, never its target). |
 | 3 | **Rules define green and yellow.** Only files matched by a rule can be green or yellow. Anything picked by hand is red. | `rules` (a rule can't be red), `cleaner::plan_manual` (always red). |
-| 4 | **Red is never automatic.** Red items are never pre-selected, never part of scheduled cleaning, and always go to the recovery bin. | `cleaner::execute` (only green may skip the bin), the UI's defaults, `wfc clean` (rules only). |
+| 4 | **Red is never automatic.** Red items are never pre-selected, never part of scheduled cleaning, and always go to the recovery bin. | `cleaner::execute` (only green may skip the bin), the UI's defaults, `wfc clean` (rules only), `schedule::select_rules` and `schedule::run` (rules only; the plan is filtered for red again before acting). |
 | 5 | **Exclusions always win** over every rule and selection. | `settings::Exclusions`, checked by the scan, the plan builder, the executor, and empty-folder removal. |
 | 6 | **Dry run first.** Every clean computes the exact file list and size first, and that list is what gets acted on. | `cleaner::plan_*` then `cleaner::execute`. The app only executes a plan the user previewed, once. `wfc clean --dry-run` prints the list. |
 | 7 | **Fail safe.** Locked, in-use, or permission-denied files are skipped and reported. One failure never aborts the batch or corrupts the recovery index. | `cleaner::execute` (per-file outcomes), `recovery` (write-ahead index). |
@@ -89,6 +89,124 @@ disabled.
    reason. Afterwards, folders left empty are removed (deepest first, never
    above the rule's location, each one re-checked), the bin's limits are
    applied, and every outcome is logged.
+
+## File finders
+
+The large/old file finder and the duplicate finder only list files. Their
+results are always red tier: nothing is picked for the user, and picked
+files are moved to the recovery bin through the same plan and checks as any
+other hand-picked item. Protected and excluded files are never listed.
+
+For duplicates, the core refuses a plan that would remove every copy in a
+group, or whose kept copy no longer exists; the UI also never lets the last
+copy be picked. Hashing opens files read-only without following links, and
+skips cloud placeholders so it never downloads them.
+
+## Privacy cleaning
+
+The Privacy tab clears Windows traces (recent documents, jump lists, Run
+history, clipboard). Each is cleared only when the user ticks it; none is
+ticked by default. Contents are never read: items are only counted, and the
+log records file paths and sizes, or for the Run history and clipboard just
+"cleared N entries" / "emptied". Recent-document shortcuts and jump list files
+are deleted through the same link-safe handles and guard as everything else.
+The only registry data touched is the values of the user's own
+`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU`.
+
+## Startup manager
+
+The Startup tab never deletes anything. Turning an item off writes the same
+switch Task Manager's Startup tab uses, a value under
+`Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved`
+(`Run`, `Run32`, or `StartupFolder`) named after the item; turning it back on
+rewrites that value. The Run value, the shortcut in the Startup folder, and
+the program are left alone. A scheduled task is turned off and on with Task
+Scheduler's own enabled flag. The app can only switch an item that is in a
+fresh listing (it looks the item up by ID; the frontend never names a key,
+file, or task). Items that start for every user live under
+`HKEY_LOCAL_MACHINE` and need administrator rights; without them the switch
+is disabled and Windows' refusal is reported, never worked around.
+
+Services set to start automatically are listed read-only. Reading a
+program's publisher reads its version information as data; no code from it
+runs, and cloud-only files are skipped so they aren't downloaded.
+
+## App updates (winget)
+
+The Updates tab runs Windows' own `winget` as a separate process, with no
+window and no shell, from its fixed per-user location
+(`%LOCALAPPDATA%\Microsoft\WindowsApps\winget.exe`), never through `PATH`.
+Only package ids from winget's latest list can be updated, and each id must
+match a strict pattern (letters, digits, `. _ - +`, starting with a letter or
+digit), so it can never be read as an option. Nothing is picked by default.
+An update runs that app's own installer; it is never stopped halfway (Cancel
+takes effect between apps), because stopping an installer midway could
+leave the app broken.
+
+## Scheduled cleaning
+
+Scheduled cleaning is off until the user turns it on. It is a Windows Task
+Scheduler task (`\WinFastCleaner\Scheduled cleaning`) that runs
+`wfcw.exe clean --scheduled` from the install folder, as the signed-in user
+with the least privileges (never elevated). `wfcw.exe` accepts only that
+command line. Each run:
+
+- uses only cleaning rules: safe (green) ones, and optional (yellow) ones
+  only if the user chose them (those go to the recovery bin). Red items can't
+  be selected, and the plan is filtered for red again before acting;
+- goes through the same scan, plan, and link-safe execute as any other
+  clean, with the guard and the exclusions;
+- skips rules that need administrator rights or whose app is open, and
+  reports them;
+- asks nothing, and records what it did in the log and in
+  `scheduled-last.json`, which Settings shows.
+
+The task's settings change only through the app's own command, which updates
+the task first and the settings only if that worked, so the two stay in step.
+
+## Tray monitor
+
+The tray monitor (`wfc-tray.exe`) is a separate, small program with no web
+view. It only reads: every hour it runs the health check (and, at most every
+six hours, a read-only junk scan) and shows notifications, each kind at most
+once a day. It never cleans or changes anything. It starts at sign-in through
+a value in the user's own `Run` key, added and removed only by the Settings
+switch. A second copy refuses to start.
+
+## Installing and uninstalling
+
+The installer installs for all users into `C:\Program Files\WinFastCleaner`,
+a folder ordinary programs can't change (the per-user location Tauri would
+otherwise use is the data folder itself). It never starts the app's
+programs with its administrator rights. Uninstalling first runs
+`wfc remove-integration`, which deletes the scheduled task and the tray's
+sign-in entry and closes the tray, then removes the program files. The data
+folder (settings, logs, and the recovery bin, which may hold the user's
+files) is kept; the README tells the user to restore what they want and then
+delete it.
+
+## Health check
+
+The health check only reads: free space, the cached junk and update
+summaries, the startup list, the recovery bin's usage, and Windows' drive
+health reports through WMI. It changes nothing; each problem links to the
+tab where the user can act.
+
+## Secure delete
+
+Secure delete (off by default, offered only when turned on in Settings)
+overwrites a file with zeros through the same link-safe handle, flushes it to
+disk, and then deletes it. It is only offered where it can't conflict with
+the rules above:
+
+- for rule-based (green and yellow) cleaning, where those files skip the
+  recovery bin;
+- for deleting batches from the recovery bin.
+
+**Red items always go to the recovery bin first** (rule 4), even when secure
+delete is chosen; the core enforces this, not just the UI. On SSDs, wear
+leveling may keep old copies of the data, so the UI says it is less
+effective there.
 
 ## Recovery bin
 
@@ -178,7 +296,8 @@ and finishes it safely, so it isn't cancelled midway.
   only that previewed plan, once. The only paths the UI sends are the folder
   to scan and exclusions (a list that can only protect files).
 - **No network access** from the app. `deny.toml` bans HTTP and TLS client
-  crates.
+  crates. The only outside programs it starts are `winget` (Updates tab) and
+  `Dism.exe` (Deep clean), with fixed arguments.
 - **Rule files are data only.** Loading a rule can never execute code or run
   a command. Unknown fields are rejected, every value is validated, and a
   rule aimed at a protected location is refused (see the

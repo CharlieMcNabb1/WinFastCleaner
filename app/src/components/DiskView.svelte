@@ -2,30 +2,30 @@
   import { onMount } from "svelte";
 
   import { type Backend, backend, errorMessage } from "../lib/backend.ts";
-  import { sizeAndCount } from "../lib/cleaner.ts";
   import { formatCount, formatDuration, formatPercent, formatSize } from "../lib/format.ts";
-  import type {
-    AppInfo,
-    CleanReport,
-    DriveInfo,
-    ManualPlanView,
-    NodeDetail,
-    NodeView,
-    ScanProgress,
-    ScanSummary,
-  } from "../lib/types.ts";
-  import CleanResult from "./CleanResult.svelte";
+  import type { AppInfo, DriveInfo, ManualPlanView, NodeDetail, NodeView, ScanProgress, ScanSummary } from "../lib/types.ts";
   import DrivePicker from "./DrivePicker.svelte";
   import FileList from "./FileList.svelte";
   import FlagBadges from "./FlagBadges.svelte";
   import FolderTree from "./FolderTree.svelte";
   import Icon from "./Icon.svelte";
-  import Modal from "./Modal.svelte";
+  import ManualClean from "./ManualClean.svelte";
   import ScanProgressPanel from "./ScanProgressPanel.svelte";
-  import TierBadge from "./TierBadge.svelte";
   import Treemap from "./Treemap.svelte";
 
-  let { info, onNavigate }: { info: AppInfo | null; onNavigate: (tab: "recover") => void } = $props();
+  let {
+    info,
+    target,
+    onNavigate,
+    onScanned,
+  }: {
+    info: AppInfo | null;
+    /** A folder to show (from "What grew"); `seq` changes on each request. */
+    target: { path: string; root: string; seq: number } | null;
+    onNavigate: (tab: "recover") => void;
+    /** Called when a scan finishes (it also saved a snapshot). */
+    onScanned?: () => void;
+  } = $props();
 
   let api = $state<Backend | null>(null);
   let drives = $state<DriveInfo[]>([]);
@@ -42,9 +42,18 @@
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   /** Bumped when exclusions change, so the list re-reads its marks. */
   let refreshKey = $state(0);
-  let manual = $state<{ name: string; view: ManualPlanView } | null>(null);
-  let manualCleaning = $state<{ done: number; total: number } | null>(null);
-  let manualResult = $state<CleanReport | null>(null);
+  let manual = $state<{ title: string; view: ManualPlanView } | null>(null);
+  /** A path to open once the scan that is running finishes. */
+  let pendingReveal: string | null = null;
+  let lastTarget = 0;
+
+  $effect(() => {
+    const t = target;
+    if (t && t.seq !== lastTarget) {
+      lastTarget = t.seq;
+      void reveal(t.path, t.root);
+    }
+  });
 
   let lineage = $derived(new Set(current?.lineage.map((c) => c.id) ?? []));
   let isWindows = $derived(info?.platform === "windows");
@@ -88,8 +97,13 @@
             summary = e.summary;
             scanId = e.scanId;
             showSkipped = false;
-            void open(0, true);
+            void open(0, true).then(() => {
+              const p = pendingReveal;
+              pendingReveal = null;
+              if (p) void reveal(p, null);
+            });
             void refreshDrives();
+            onScanned?.();
             break;
           case "cancelled":
             scanning = false;
@@ -142,32 +156,31 @@
   async function sendToCleaner(node: NodeView) {
     if (!api || scanId === null) return;
     try {
-      manual = { name: node.name, view: await api.cleanManual(scanId, [node.id]) };
+      manual = { title: `Move "${node.name}" to the recovery bin?`, view: await api.cleanManual(scanId, [node.id]) };
     } catch (e) {
       error = errorMessage(e);
     }
   }
 
-  async function runManual() {
-    const m = manual;
-    manual = null;
-    if (!api || !m) return;
-    manualResult = null;
-    manualCleaning = { done: 0, total: 0 };
-    try {
-      await api.cleanExecute(m.view.plan.planId, (e) => {
-        if (e.type === "progress") manualCleaning = { done: e.done, total: e.total };
-        else {
-          manualCleaning = null;
-          if (e.type === "done") {
-            manualResult = e.report;
-            showNotice("Scan again to update the sizes shown here.");
-          } else error = e.message;
+  /** Opens `path` in the current scan, scanning `root` first if needed. */
+  async function reveal(path: string, root: string | null) {
+    api ??= await backend();
+    if (scanId !== null) {
+      try {
+        const id = await api.locateNode(scanId, path);
+        if (id !== null) {
+          await open(id);
+          return;
         }
-      });
-    } catch (e) {
-      manualCleaning = null;
-      error = errorMessage(e);
+      } catch {
+        // Not in this scan; scan its root below.
+      }
+    }
+    if (root && !scanning) {
+      pendingReveal = path;
+      await startScan(root);
+    } else if (!root) {
+      showNotice("That folder isn't in this scan anymore.");
     }
   }
 
@@ -227,18 +240,14 @@
     </div>
   {/if}
 
-  {#if manualCleaning}
-    <div class="notice" aria-live="polite">
-      <Icon name="sparkle" size={18} />
-      <span>
-        Moving files to the recovery bin…
-        {#if manualCleaning.total > 0}{formatCount(manualCleaning.done)} of {formatCount(manualCleaning.total)}{/if}
-      </span>
-      <button class="btn" onclick={() => api?.cancelClean()}><Icon name="x" /> Cancel</button>
-    </div>
-  {/if}
-  {#if manualResult}
-    <CleanResult report={manualResult} onRecover={() => onNavigate("recover")} onDismiss={() => (manualResult = null)} />
+  {#if api}
+    <ManualClean
+      {api}
+      bind:request={manual}
+      {onNavigate}
+      onDone={() => showNotice("Scan again to update the sizes shown here.")}
+      onError={(m) => (error = m)}
+    />
   {/if}
 
   {#if summary && scanId !== null && api && root && current}
@@ -326,51 +335,6 @@
   {/if}
 </section>
 
-<Modal open={manual !== null} title={manual ? `Move "${manual.name}" to the recovery bin?` : ""} wide onClose={() => (manual = null)}>
-  {#if manual}
-    {@const p = manual.view.plan}
-    <p class="tier-note">
-      <TierBadge tier="red" />
-      <span>
-        Items you pick yourself are always <strong>Review</strong> tier: they are moved to the recovery bin, never deleted
-        directly, so you can put them back from the Recover tab.
-      </span>
-    </p>
-    {#if p.count > 0}
-      <p><strong>{sizeAndCount(p.totalSize, p.count)}</strong> will be moved.</p>
-      <details>
-        <summary>Largest files</summary>
-        <ul class="sample">
-          {#each manual.view.sample.slice(0, 50) as f (f.path)}
-            <li><span class="path ellipsis" title={f.path}>{f.path}</span> <span class="muted num">{formatSize(f.size)}</span></li>
-          {/each}
-        </ul>
-      </details>
-    {:else}
-      <p>Nothing here can be cleaned.</p>
-    {/if}
-    {#if manual.view.rejected.length > 0}
-      <div>
-        <p class="muted">Left out:</p>
-        <ul class="sample">
-          {#each manual.view.rejected as r (r.path)}
-            <li><span class="path ellipsis" title={r.path}>{r.path}</span> <span class="muted">{r.reason}</span></li>
-          {/each}
-        </ul>
-      </div>
-    {/if}
-    <p class="muted">Protected Windows files, excluded items, links, and cloud files inside it are always left alone.</p>
-  {/if}
-  {#snippet actions()}
-    <button class="btn" onclick={() => (manual = null)}>Cancel</button>
-    {#if manual}
-      {@const p = manual.view.plan}
-      <button class="btn primary" onclick={runManual} disabled={p.count === 0}>
-        Move {sizeAndCount(p.totalSize, p.count)} to the recovery bin
-      </button>
-    {/if}
-  {/snippet}
-</Modal>
 
 <style>
   .disk {
@@ -506,29 +470,6 @@
     flex: 1;
     display: grid;
     place-items: center;
-  }
-  .tier-note {
-    display: flex;
-    gap: 8px;
-    align-items: flex-start;
-    margin: 0;
-  }
-  .sample {
-    margin: 4px 0 0;
-    padding-left: 18px;
-    max-height: 180px;
-    overflow: auto;
-    font-size: 12px;
-  }
-  .sample li {
-    display: flex;
-    gap: 8px;
-    justify-content: space-between;
-  }
-  .ellipsis {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .toast {
     position: fixed;

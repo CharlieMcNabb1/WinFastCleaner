@@ -1,10 +1,24 @@
 <script lang="ts">
   import { type Backend, backend, errorMessage } from "../lib/backend.ts";
   import { plural } from "../lib/cleaner.ts";
-  import type { AppInfo, Exclusion, ExclusionKind, Settings, SettingsView } from "../lib/types.ts";
+  import { applyTheme } from "../lib/theme.svelte.ts";
+  import type {
+    AppInfo,
+    Exclusion,
+    ExclusionKind,
+    HealthThresholds,
+    Settings,
+    SettingsView,
+    Theme,
+  } from "../lib/types.ts";
+  import AutomationSettings from "./AutomationSettings.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
 
-  let { info, active }: { info: AppInfo | null; active: boolean } = $props();
+  let {
+    info,
+    active,
+    onNavigate,
+  }: { info: AppInfo | null; active: boolean; onNavigate: (tab: "recover") => void } = $props();
 
   const GB = 1024 ** 3;
   const KIND_ICON: Record<ExclusionKind, IconName> = { folder: "folder", file: "file", pattern: "pattern" };
@@ -86,10 +100,27 @@
     });
   }
 
+  function setSnapshotDays(raw: string) {
+    const n = Number(raw);
+    if (!Number.isInteger(n)) return;
+    void update((s) => (s.snapshotDays = n));
+  }
+
   function setNumber(field: "maxPercent" | "maxBatches" | "maxAgeDays", raw: string) {
     const n = Number(raw);
     if (!Number.isInteger(n)) return;
     void update((s) => (s.bin[field] = n));
+  }
+
+  function setTheme(theme: Theme) {
+    applyTheme(theme);
+    void update((s) => (s.theme = theme));
+  }
+
+  function setHealth(field: keyof HealthThresholds, raw: string) {
+    const n = Number(raw);
+    if (!Number.isInteger(n)) return;
+    void update((s) => (s.health[field] = n));
   }
 
   function setMaxGb(raw: string) {
@@ -127,6 +158,20 @@
 
   {#if view}
     {@const s = view.settings}
+    <section class="card" aria-labelledby="set-theme">
+      <h2 id="set-theme">Appearance</h2>
+      <div class="grid">
+        <label for="theme">Theme</label>
+        <span>
+          <select id="theme" value={s.theme} onchange={(e) => setTheme(e.currentTarget.value as Theme)}>
+            <option value="system">Same as Windows</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </span>
+      </div>
+    </section>
+
     <section class="card" aria-labelledby="set-cleaning">
       <h2 id="set-cleaning">Cleaning</h2>
       <label class="check">
@@ -135,6 +180,24 @@
           Send safe (green) items to the recovery bin too
           <span class="muted hint">
             Off by default: safe items rebuild on their own, so they are deleted directly and the space is freed right away.
+          </span>
+        </span>
+      </label>
+    </section>
+
+    <AutomationSettings {info} {active} {onNavigate} />
+
+    <section class="card" aria-labelledby="set-secure">
+      <h2 id="set-secure">Secure delete</h2>
+      <label class="check">
+        <input type="checkbox" checked={s.secureDelete} onchange={(e) => update((x) => (x.secureDelete = e.currentTarget.checked))} />
+        <span>
+          Offer secure delete
+          <span class="muted hint">
+            When it's offered, the Cleaner and the Recover tab let you overwrite files before deleting them, so they can't be
+            recovered. It is slower, skips the recovery bin (nothing can be restored), and is less effective on SSDs, which
+            may keep old copies of data elsewhere. Files you pick yourself always go to the recovery bin first; delete them
+            securely from the Recover tab.
           </span>
         </span>
       </label>
@@ -158,11 +221,46 @@
       </div>
     </section>
 
+    <section class="card" aria-labelledby="set-snapshots">
+      <h2 id="set-snapshots">Scan snapshots</h2>
+      <p class="muted hint">Each scan saves folder sizes for the What grew tab. Older snapshots are deleted.</p>
+      <div class="grid">
+        <label for="snap-days">Keep snapshots for</label>
+        <span><input id="snap-days" type="number" min="1" max="3650" value={s.snapshotDays} onchange={(e) => setSnapshotDays(e.currentTarget.value)} /> days</span>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="set-health">
+      <h2 id="set-health">Health check</h2>
+      <p class="muted hint">When each check on Home turns yellow (attention) or red (problem).</p>
+      <div class="grid">
+        <span>Free space on a drive</span>
+        <span>
+          yellow below <input aria-label="Free space, yellow below (percent)" type="number" min="2" max="99" value={s.health.diskFreeYellowPct} onchange={(e) => setHealth("diskFreeYellowPct", e.currentTarget.value)} /> %,
+          red below <input aria-label="Free space, red below (percent)" type="number" min="1" max="98" value={s.health.diskFreeRedPct} onchange={(e) => setHealth("diskFreeRedPct", e.currentTarget.value)} /> %
+        </span>
+        <span>Junk that can be cleaned</span>
+        <span>
+          yellow above <input aria-label="Junk, yellow above (GB)" type="number" min="1" value={s.health.junkYellowGb} onchange={(e) => setHealth("junkYellowGb", e.currentTarget.value)} /> GB,
+          red above <input aria-label="Junk, red above (GB)" type="number" min="2" value={s.health.junkRedGb} onchange={(e) => setHealth("junkRedGb", e.currentTarget.value)} /> GB
+        </span>
+        <span>Apps starting at sign-in</span>
+        <span>
+          yellow above <input aria-label="Startup apps, yellow above" type="number" min="1" value={s.health.startupYellow} onchange={(e) => setHealth("startupYellow", e.currentTarget.value)} />,
+          red above <input aria-label="Startup apps, red above" type="number" min="2" max="1000" value={s.health.startupRed} onchange={(e) => setHealth("startupRed", e.currentTarget.value)} />
+        </span>
+        <label for="health-bin">Recovery bin full</label>
+        <span><input id="health-bin" type="number" min="50" max="100" value={s.health.binYellowPct} onchange={(e) => setHealth("binYellowPct", e.currentTarget.value)} /> % of its limit (yellow)</span>
+        <label for="health-wear">SSD wear</label>
+        <span><input id="health-wear" type="number" min="1" max="100" value={s.health.ssdWearYellowPct} onchange={(e) => setHealth("ssdWearYellowPct", e.currentTarget.value)} /> % of rated life used (yellow)</span>
+      </div>
+    </section>
+
     <section class="card" aria-labelledby="set-exclusions">
       <h2 id="set-exclusions">Exclusions (never touch)</h2>
       <p class="muted hint">
-        Excluded files and folders are never cleaned, by any rule or selection. You can also add them from the Disk tab
-        (right-click an item).
+        Excluded files and folders are never cleaned, by any rule or selection, and the file finders skip them. You can
+        also add them from the Disk tab (right-click an item).
       </p>
       {#if s.exclusions.length === 0}
         <p class="muted">No exclusions yet.</p>
@@ -261,6 +359,9 @@
   }
   .grid input {
     width: 90px;
+  }
+  .grid span input {
+    width: 70px;
   }
   .exclusions {
     list-style: none;

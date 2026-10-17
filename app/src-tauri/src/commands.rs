@@ -17,7 +17,7 @@ use cleaner_core::progress::{CancelToken, ScanProgress};
 use cleaner_core::safety::Guard;
 use cleaner_core::scan::{Scan, ScanOptions, ScanSummary, scan};
 use cleaner_core::settings::{Exclusions, Settings};
-use cleaner_core::snapshot::{self, Snapshot};
+use cleaner_core::snapshot;
 use cleaner_core::tree::{NodeId, Tree};
 
 use crate::state::{AppState, LoadedScan};
@@ -82,7 +82,7 @@ pub enum ScanEvent {
 }
 
 /// Checks a path typed or picked in the UI before scanning it.
-fn validate_scan_path(raw: &str) -> CmdResult<PathBuf> {
+pub(crate) fn validate_scan_path(raw: &str) -> CmdResult<PathBuf> {
     if raw.is_empty() || raw.chars().count() > MAX_PATH_CHARS || raw.contains('\0') {
         return Err("That is not a valid folder path.".into());
     }
@@ -177,18 +177,12 @@ pub fn cancel_scan(state: State<'_, AppState>) {
     }
 }
 
-fn save_snapshot(scan: &Scan) -> bool {
-    let Some(dir) = cleaner_core::paths::default_data_dir().map(|d| d.join("snapshots")) else {
+pub(crate) fn save_snapshot(scan: &Scan) -> bool {
+    let Some(data) = cleaner_core::paths::default_data_dir() else {
         return false;
     };
-    let snap = Snapshot::from_scan(
-        scan,
-        snapshot::DEFAULT_MIN_FOLDER_SIZE,
-        snapshot::DEFAULT_MAX_DEPTH,
-    );
-    let saved = snapshot::save(&dir, &snap).is_ok();
-    let _ = snapshot::prune(&dir, snapshot::DEFAULT_RETENTION_DAYS, snap.taken_at);
-    saved
+    let days = Settings::load(&data).snapshot_days;
+    snapshot::record(&data, scan, days).is_ok()
 }
 
 pub(crate) fn loaded(state: &AppState, scan_id: u64) -> CmdResult<Arc<LoadedScan>> {
@@ -432,6 +426,18 @@ pub fn treemap(
         depth.clamp(1, MAX_TREEMAP_DEPTH),
         max_children.clamp(1, MAX_TREEMAP_CHILDREN) as usize,
     ))
+}
+
+/// Finds a path in a Disk scan (for "Show in Disk" links). Read-only.
+#[tauri::command(async)]
+pub fn locate_node(
+    state: State<'_, AppState>,
+    scan_id: u64,
+    path: String,
+) -> CmdResult<Option<NodeId>> {
+    let path = validate_scan_path(&path)?;
+    let loaded = loaded(&state, scan_id)?;
+    Ok(loaded.scan.tree.find(&path))
 }
 
 /// Shows the item selected in File Explorer.

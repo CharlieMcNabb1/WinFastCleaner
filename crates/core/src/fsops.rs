@@ -46,6 +46,14 @@ pub fn open(path: &Path) -> io::Result<Opened> {
     })
 }
 
+/// Like [`open`], but also allows overwriting the file's contents
+/// ([`Opened::wipe`]) for secure delete.
+pub fn open_for_wipe(path: &Path) -> io::Result<Opened> {
+    Ok(Opened {
+        inner: imp::Handle::open_writable(path)?,
+    })
+}
+
 impl Opened {
     pub fn info(&self) -> io::Result<ItemInfo> {
         self.inner.info()
@@ -54,6 +62,15 @@ impl Opened {
     /// The item's real location, resolved by the file system.
     pub fn final_path(&self) -> io::Result<PathBuf> {
         self.inner.final_path()
+    }
+
+    /// Overwrites the whole file with zeros and flushes it to disk, through
+    /// the same handle (only for items opened with [`open_for_wipe`]).
+    ///
+    /// On SSDs, wear leveling may keep old copies of the data elsewhere, so
+    /// this is best effort there.
+    pub fn wipe(&self) -> io::Result<()> {
+        self.inner.wipe()
     }
 
     /// Deletes the item (a file, or an empty folder).
@@ -66,6 +83,98 @@ impl Opened {
     pub fn rename_no_replace(&self, target: &Path) -> io::Result<()> {
         self.inner.rename_no_replace(target)
     }
+}
+
+/// Which file an open handle refers to (volume and file number), so two
+/// names of one hard-linked file can be told apart from two copies.
+pub type FileId = (u64, u128);
+
+/// Opens a regular file for reading without following links. Links,
+/// folders, and cloud placeholders (whose contents would be downloaded by
+/// reading them) are refused.
+pub fn open_read(path: &Path) -> io::Result<(std::fs::File, FileId)> {
+    read_imp::open(path)
+}
+
+#[cfg(windows)]
+mod read_imp {
+    use super::FileId;
+    use std::fs::File;
+    use std::io;
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use std::path::Path;
+
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_OFFLINE,
+        FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS, FILE_ATTRIBUTE_RECALL_ON_OPEN,
+        FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_SEQUENTIAL_SCAN,
+        GetFileInformationByHandle,
+    };
+
+    pub fn open(path: &Path) -> io::Result<(File, FileId)> {
+        let f = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN)
+            .open(path)?;
+        // SAFETY: a plain C struct for which all zeros is a valid value.
+        let mut bh: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+        // SAFETY: the handle is open and `bh` is a valid out-pointer.
+        if unsafe { GetFileInformationByHandle(f.as_raw_handle() as HANDLE, &mut bh) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let a = bh.dwFileAttributes;
+        if a & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
+            return Err(io::Error::other("not a regular file"));
+        }
+        if a & (FILE_ATTRIBUTE_OFFLINE
+            | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
+            | FILE_ATTRIBUTE_RECALL_ON_OPEN)
+            != 0
+        {
+            return Err(io::Error::other("cloud file (contents not on this PC)"));
+        }
+        let index = (u128::from(bh.nFileIndexHigh) << 32) | u128::from(bh.nFileIndexLow);
+        Ok((f, (u64::from(bh.dwVolumeSerialNumber), index)))
+    }
+}
+
+#[cfg(unix)]
+mod read_imp {
+    use super::FileId;
+    use std::fs::File;
+    use std::io;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    use std::path::Path;
+
+    pub fn open(path: &Path) -> io::Result<(File, FileId)> {
+        let f = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)?;
+        let md = f.metadata()?;
+        if !md.is_file() {
+            return Err(io::Error::other("not a regular file"));
+        }
+        Ok((f, (md.dev(), u128::from(md.ino()))))
+    }
+}
+
+/// Writes `len` zero bytes from the start of `file` and flushes them.
+fn overwrite(file: &std::fs::File, len: u64) -> io::Result<()> {
+    use std::io::{Seek, SeekFrom, Write};
+    let mut f = file;
+    f.seek(SeekFrom::Start(0))?;
+    let zeros = vec![0u8; 1024 * 1024];
+    let mut left = len;
+    while left > 0 {
+        let n = left.min(zeros.len() as u64) as usize;
+        f.write_all(&zeros[..n])?;
+        left -= n as u64;
+    }
+    f.flush()?;
+    file.sync_all()
 }
 
 /// Short reason for an I/O error, for "skipped" lists.
@@ -128,6 +237,25 @@ mod imp {
                 .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
                 .open(path)?;
             Ok(Handle { file })
+        }
+
+        pub fn open_writable(path: &Path) -> io::Result<Handle> {
+            const GENERIC_WRITE: u32 = 0x4000_0000;
+            let file = std::fs::OpenOptions::new()
+                .access_mode(GENERIC_WRITE | DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE)
+                // Nobody else may write while the file is overwritten.
+                .share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE)
+                .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+                .open(path)?;
+            Ok(Handle { file })
+        }
+
+        pub fn wipe(&self) -> io::Result<()> {
+            let info = self.info()?;
+            if info.is_dir || info.is_special || info.is_cloud {
+                return Err(io::Error::other("only regular files can be overwritten"));
+            }
+            super::overwrite(&self.file, info.size)
         }
 
         pub fn info(&self) -> io::Result<ItemInfo> {
@@ -296,6 +424,23 @@ mod imp {
             })
         }
 
+        pub fn open_writable(path: &Path) -> io::Result<Handle> {
+            Handle::open(path)
+        }
+
+        pub fn wipe(&self) -> io::Result<()> {
+            use std::os::unix::fs::OpenOptionsExt;
+            let f = std::fs::OpenOptions::new()
+                .write(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&self.path)?;
+            let md = f.metadata()?;
+            if md.dev() != self.dev || md.ino() != self.ino || !md.is_file() {
+                return Err(io::Error::other("item changed while being processed"));
+            }
+            super::overwrite(&f, md.len())
+        }
+
         fn current(&self) -> io::Result<std::fs::Metadata> {
             let md = std::fs::symlink_metadata(&self.path)?;
             if md.dev() != self.dev || md.ino() != self.ino {
@@ -381,6 +526,54 @@ mod tests {
 
         open(&b).unwrap().delete().unwrap();
         assert!(!b.exists());
+    }
+
+    #[test]
+    fn wipe_overwrites_in_place_then_delete_removes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("secret.txt");
+        let body = vec![0xA5u8; 3 * 1024 * 1024 + 17];
+        std::fs::write(&a, &body).unwrap();
+        let h = open_for_wipe(&a).unwrap();
+        h.wipe().unwrap();
+        drop(h);
+        let after = std::fs::read(&a).unwrap();
+        assert_eq!(after.len(), body.len(), "same length");
+        assert!(after.iter().all(|b| *b == 0), "contents overwritten");
+        let h = open_for_wipe(&a).unwrap();
+        h.wipe().unwrap();
+        h.delete().unwrap();
+        assert!(!a.exists());
+        assert!(
+            open_for_wipe(tmp.path()).and_then(|h| h.wipe()).is_err(),
+            "folders are refused"
+        );
+    }
+
+    #[test]
+    fn open_read_identifies_files_and_refuses_folders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("a.bin");
+        let b = tmp.path().join("b.bin");
+        std::fs::write(&a, b"same").unwrap();
+        std::fs::write(&b, b"same").unwrap();
+        let (_, id_a) = open_read(&a).unwrap();
+        let (_, id_b) = open_read(&b).unwrap();
+        assert_ne!(id_a, id_b, "two copies are two files");
+        let link = tmp.path().join("hard.bin");
+        std::fs::hard_link(&a, &link).unwrap();
+        assert_eq!(
+            open_read(&link).unwrap().1,
+            id_a,
+            "a hard link is the same file"
+        );
+        assert!(open_read(tmp.path()).is_err(), "folders are refused");
+        #[cfg(unix)]
+        {
+            let sym = tmp.path().join("sym.bin");
+            std::os::unix::fs::symlink(&a, &sym).unwrap();
+            assert!(open_read(&sym).is_err(), "symlinks are not followed");
+        }
     }
 
     #[cfg(unix)]

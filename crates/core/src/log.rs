@@ -18,6 +18,8 @@ const KEEP_OLD: u32 = 3;
 #[serde(rename_all = "kebab-case")]
 pub enum Action {
     Deleted,
+    /// Overwritten, then deleted (secure delete).
+    Wiped,
     MovedToBin,
     Skipped,
     Restored,

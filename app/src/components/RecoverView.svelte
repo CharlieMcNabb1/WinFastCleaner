@@ -23,6 +23,9 @@
   let conflict = $state<{ batchId: string; itemIds: number[] | null; paths: string[] } | null>(null);
   let confirmDelete = $state<{ id: string; label: string; size: number; items: number } | null>(null);
   let confirmEmpty = $state(false);
+  /** Secure delete is offered (Settings) and chosen in the open dialog. */
+  let secureOffered = $state(false);
+  let secure = $state(false);
 
   let totalSize = $derived(overview?.batches.reduce((s, b) => s + b.size, 0) ?? 0);
   let totalItems = $derived(overview?.batches.reduce((s, b) => s + b.items, 0) ?? 0);
@@ -35,7 +38,9 @@
   async function refresh() {
     api ??= await backend();
     try {
-      overview = await api.recoveryOverview();
+      const [o, settings] = await Promise.all([api.recoveryOverview(), api.getSettings()]);
+      overview = o;
+      secureOffered = settings.settings.secureDelete;
       if (openBatch && !overview.batches.some((b) => b.id === openBatch!.id)) openBatch = null;
     } catch (e) {
       error = errorMessage(e);
@@ -106,7 +111,7 @@
     confirmDelete = null;
     working = true;
     try {
-      const r = await api.recoveryDelete(id);
+      const r = await api.recoveryDelete(id, secure);
       message = `Permanently deleted ${sizeAndCount(r.bytes, r.files)}.` + (r.failed > 0 ? ` ${plural(r.failed, "file")} could not be deleted.` : "");
       await refresh();
     } catch (e) {
@@ -121,7 +126,7 @@
     confirmEmpty = false;
     working = true;
     try {
-      const r = await api.recoveryEmpty();
+      const r = await api.recoveryEmpty(secure);
       message = `Emptied the recovery bin: ${sizeAndCount(r.bytes, r.files)} permanently deleted.` + (r.failed > 0 ? ` ${plural(r.failed, "file")} could not be deleted.` : "");
       openBatch = null;
       await refresh();
@@ -149,7 +154,14 @@
     </div>
     <div class="head-actions">
       <button class="btn" onclick={refresh} disabled={working}><Icon name="refresh" /> Refresh</button>
-      <button class="btn danger" onclick={() => (confirmEmpty = true)} disabled={working || totalItems === 0}>
+      <button
+        class="btn danger"
+        onclick={() => {
+          secure = false;
+          confirmEmpty = true;
+        }}
+        disabled={working || totalItems === 0}
+      >
         <Icon name="trash" /> Empty bin
       </button>
     </div>
@@ -207,7 +219,10 @@
             <button class="btn" onclick={() => restore(b.id, null)} disabled={working}><Icon name="restore" /> Restore all</button>
             <button
               class="btn danger"
-              onclick={() => (confirmDelete = { id: b.id, label: formatDateTime(b.createdAt), size: b.size, items: b.items })}
+              onclick={() => {
+                secure = false;
+                confirmDelete = { id: b.id, label: formatDateTime(b.createdAt), size: b.size, items: b.items };
+              }}
               disabled={working}
             >
               <Icon name="trash" /> Delete
@@ -271,6 +286,9 @@
       The batch from {confirmDelete.label} ({sizeAndCount(confirmDelete.size, confirmDelete.items)}) will be permanently deleted.
       It can't be restored afterwards.
     </p>
+    {#if secureOffered}
+      <label class="secure"><input type="checkbox" bind:checked={secure} /> Overwrite the files first (secure delete; slower, less effective on SSDs)</label>
+    {/if}
   {/if}
   {#snippet actions()}
     <button class="btn" onclick={() => (confirmDelete = null)}>Cancel</button>
@@ -285,6 +303,9 @@
 
 <Modal open={confirmEmpty} title="Empty the recovery bin?" onClose={() => (confirmEmpty = false)}>
   <p>Everything in the bin ({sizeAndCount(totalSize, totalItems)}) will be permanently deleted. It can't be restored afterwards.</p>
+  {#if secureOffered}
+    <label class="secure"><input type="checkbox" bind:checked={secure} /> Overwrite the files first (secure delete; slower, less effective on SSDs)</label>
+  {/if}
   {#snippet actions()}
     <button class="btn" onclick={() => (confirmEmpty = false)}>Cancel</button>
     <button class="btn danger primary" onclick={emptyBin}><Icon name="trash" /> Delete {sizeAndCount(totalSize, totalItems)}</button>
@@ -349,6 +370,11 @@
     gap: 8px;
     align-items: center;
     padding: 2px 0;
+  }
+  .secure {
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
   .conflicts {
     margin: 0;

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-start-dupes"
+description = "Enables the start_dupes command without any pre-configured scope."
+commands.allow = ["start_dupes"]
+
+[[permission]]
+identifier = "deny-start-dupes"
+description = "Denies the start_dupes command without any pre-configured scope."
+commands.deny = ["start_dupes"]

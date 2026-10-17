@@ -4,6 +4,7 @@
 //! first (`--dry-run` stops there) and asks before changing anything.
 
 mod clean;
+mod files;
 
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
@@ -16,7 +17,7 @@ use cleaner_core::format::{format_size, percent};
 use cleaner_core::platform;
 use cleaner_core::progress::{CancelToken, ScanPhase, ScanProgress};
 use cleaner_core::scan::{Scan, ScanOptions, ScanSummary, scan};
-use cleaner_core::snapshot::{self, Snapshot};
+use cleaner_core::snapshot;
 use cleaner_core::tree::{NodeId, Tree, flags};
 
 #[derive(Parser, Debug)]
@@ -72,6 +73,27 @@ enum Command {
     /// Look into, restore from, or empty the recovery bin.
     #[command(subcommand)]
     Recover(clean::RecoverCommand),
+    /// List large or old files (read-only).
+    #[command(subcommand)]
+    Find(files::FindCommand),
+    /// List files with identical contents (read-only).
+    Dupes(files::DupesArgs),
+    /// Show which folders grew or shrank between two scans.
+    Grew(files::GrewArgs),
+    /// List saved scan snapshots.
+    Snapshots {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove the scheduled cleaning task and the tray monitor's sign-in
+    /// entry, and close the tray (used by the uninstaller). Your settings,
+    /// logs, and recovery bin are kept.
+    #[command(hide = true)]
+    RemoveIntegration,
+    /// Close the tray monitor if it is running (used by the installer before
+    /// replacing its program).
+    #[command(hide = true)]
+    CloseTray,
 }
 
 fn main() -> ExitCode {
@@ -98,6 +120,18 @@ fn main() -> ExitCode {
         Command::Rules(cmd) => clean::rules_cmd(cmd),
         Command::Clean(args) => clean::clean_cmd(args),
         Command::Recover(cmd) => clean::recover_cmd(cmd),
+        Command::Find(cmd) => files::find_cmd(cmd),
+        Command::Dupes(args) => files::dupes_cmd(args),
+        Command::Grew(args) => files::grew_cmd(args),
+        Command::Snapshots { json } => files::snapshots_cmd(json),
+        Command::RemoveIntegration => remove_integration(),
+        Command::CloseTray => {
+            if cleaner_core::integration::close_tray() {
+                // Give it a moment to remove its icon and exit.
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+            Ok(())
+        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -109,6 +143,19 @@ fn main() -> ExitCode {
 }
 
 pub(crate) type CliResult = Result<(), Box<dyn std::error::Error>>;
+
+fn remove_integration() -> CliResult {
+    let problems = cleaner_core::integration::remove_all();
+    for p in &problems {
+        eprintln!("warning: {p}");
+    }
+    if problems.is_empty() {
+        println!("Removed the scheduled cleaning task and the tray monitor's sign-in entry.");
+        Ok(())
+    } else {
+        Err("some parts could not be removed".into())
+    }
+}
 
 fn drives(json: bool) -> CliResult {
     let drives = platform::drives();
@@ -187,18 +234,13 @@ fn run_scan(args: ScanArgs) -> CliResult {
     Ok(())
 }
 
-fn save_snapshot(scan: &Scan, quiet: bool) {
-    let Some(dir) = cleaner_core::paths::default_data_dir().map(|d| d.join("snapshots")) else {
+pub(crate) fn save_snapshot(scan: &Scan, quiet: bool) {
+    let Some(data) = cleaner_core::paths::default_data_dir() else {
         return;
     };
-    let snap = Snapshot::from_scan(
-        scan,
-        snapshot::DEFAULT_MIN_FOLDER_SIZE,
-        snapshot::DEFAULT_MAX_DEPTH,
-    );
-    match snapshot::save(&dir, &snap) {
+    let days = cleaner_core::settings::Settings::load(&data).snapshot_days;
+    match snapshot::record(&data, scan, days) {
         Ok(path) => {
-            let _ = snapshot::prune(&dir, snapshot::DEFAULT_RETENTION_DAYS, snap.taken_at);
             if !quiet {
                 eprintln!("Snapshot saved: {}", path.display());
             }
@@ -399,15 +441,7 @@ pub(crate) fn files(n: u64) -> String {
 
 /// 1234567 -> "1,234,567"
 pub(crate) fn group(n: u64) -> String {
-    let s = n.to_string();
-    let mut out = String::with_capacity(s.len() + s.len() / 3);
-    for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
+    cleaner_core::format::format_count(n)
 }
 
 pub(crate) fn truncate(s: &str, max: usize) -> String {

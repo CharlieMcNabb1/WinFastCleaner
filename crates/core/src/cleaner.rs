@@ -513,6 +513,9 @@ pub struct ExecOptions {
     pub green_to_bin: bool,
     /// Label for the recovery batch, such as "Cleaner".
     pub label: String,
+    /// Secure delete: overwrite green and yellow files before deleting
+    /// them (they skip the recovery bin). Red items always go to the bin.
+    pub secure: bool,
 }
 
 /// What happened to one file.
@@ -520,6 +523,8 @@ pub struct ExecOptions {
 #[serde(rename_all = "camelCase", tag = "kind", content = "reason")]
 pub enum Outcome {
     Deleted,
+    /// Overwritten, then deleted (secure delete).
+    Wiped,
     MovedToBin,
     Skipped(String),
 }
@@ -538,6 +543,8 @@ pub struct SkippedItem {
 pub struct CleanReport {
     pub deleted_count: u64,
     pub deleted_bytes: u64,
+    /// Of the deleted files, how many were overwritten first.
+    pub wiped_count: u64,
     pub binned_count: u64,
     pub binned_bytes: u64,
     pub skipped_count: u64,
@@ -567,7 +574,10 @@ pub fn execute(
     let to_bin: Vec<bool> = plan
         .items
         .iter()
-        .map(|i| i.tier != Tier::Green || opts.green_to_bin)
+        .map(|i| {
+            // Red items always go to the bin, even with secure delete.
+            i.tier == Tier::Red || (!opts.secure && (i.tier != Tier::Green || opts.green_to_bin))
+        })
         .collect();
 
     // Record the recovery batch before anything moves.
@@ -621,11 +631,11 @@ pub fn execute(
                 Outcome::Skipped("Cancelled".into())
             } else {
                 match slot {
-                    None => act(item, ctx, None),
+                    None => act(item, ctx, None, opts.secure),
                     Some(i) => {
                         let p = prepared.as_ref().expect("batch prepared");
                         match (&p.stored[*i], &p.unavailable[*i]) {
-                            (Some(dest), _) => act(item, ctx, Some(dest)),
+                            (Some(dest), _) => act(item, ctx, Some(dest), false),
                             (None, why) => Outcome::Skipped(
                                 why.clone()
                                     .unwrap_or_else(|| "Recovery bin unavailable".into()),
@@ -664,6 +674,11 @@ pub fn execute(
             Outcome::Deleted => {
                 report.deleted_count += 1;
                 report.deleted_bytes += item.size;
+            }
+            Outcome::Wiped => {
+                report.deleted_count += 1;
+                report.deleted_bytes += item.size;
+                report.wiped_count += 1;
             }
             Outcome::MovedToBin => {
                 report.binned_count += 1;
@@ -737,7 +752,7 @@ fn skip_all(
 
 /// Re-checks one file through a link-safe handle, then deletes it or moves
 /// it to `bin_dest`.
-fn act(item: &PlanItem, ctx: &Context, bin_dest: Option<&PathBuf>) -> Outcome {
+fn act(item: &PlanItem, ctx: &Context, bin_dest: Option<&PathBuf>, secure: bool) -> Outcome {
     let skip = |why: &str| Outcome::Skipped(why.to_string());
     if let Some(app) = item
         .close_apps
@@ -746,7 +761,12 @@ fn act(item: &PlanItem, ctx: &Context, bin_dest: Option<&PathBuf>) -> Outcome {
     {
         return Outcome::Skipped(format!("{app} is running"));
     }
-    let h = match fsops::open(&item.path) {
+    let opened = if secure {
+        fsops::open_for_wipe(&item.path)
+    } else {
+        fsops::open(&item.path)
+    };
+    let h = match opened {
         Ok(h) => h,
         Err(e) => return Outcome::Skipped(fsops::describe_error(&e)),
     };
@@ -783,6 +803,10 @@ fn act(item: &PlanItem, ctx: &Context, bin_dest: Option<&PathBuf>) -> Outcome {
         return skip("On your exclusions list");
     }
     match bin_dest {
+        None if secure => match h.wipe().and_then(|()| h.delete()) {
+            Ok(()) => Outcome::Wiped,
+            Err(e) => Outcome::Skipped(fsops::describe_error(&e)),
+        },
         None => match h.delete() {
             Ok(()) => Outcome::Deleted,
             Err(e) => Outcome::Skipped(fsops::describe_error(&e)),
@@ -850,6 +874,7 @@ fn write_log(
         .map(|(item, outcome)| {
             let (action, detail) = match outcome {
                 Outcome::Deleted => (Action::Deleted, None),
+                Outcome::Wiped => (Action::Wiped, None),
                 Outcome::MovedToBin => (Action::MovedToBin, None),
                 Outcome::Skipped(r) => (Action::Skipped, Some(r.as_str())),
             };
@@ -1023,6 +1048,7 @@ mod tests {
             &ExecOptions {
                 green_to_bin: false,
                 label: "Cleaner".into(),
+                secure: false,
             },
             &|_, _| {},
             &CancelToken::new(),
@@ -1074,6 +1100,7 @@ mod tests {
             &ExecOptions {
                 green_to_bin: false,
                 label: "Cleaner".into(),
+                secure: false,
             },
             &|_, _| {},
             &CancelToken::new(),
@@ -1122,6 +1149,7 @@ mod tests {
             &ExecOptions {
                 green_to_bin: false,
                 label: "Cleaner".into(),
+                secure: false,
             },
             &|_, _| {},
             &CancelToken::new(),
@@ -1179,6 +1207,7 @@ mod tests {
             &ExecOptions {
                 green_to_bin: false,
                 label: "Cleaner".into(),
+                secure: false,
             },
             &|_, _| {},
             &CancelToken::new(),
@@ -1224,6 +1253,7 @@ mod tests {
             &ExecOptions {
                 green_to_bin: false,
                 label: "Cleaner".into(),
+                secure: false,
             },
             &|_, _| {},
             &CancelToken::new(),
@@ -1231,6 +1261,45 @@ mod tests {
         assert_eq!(report.skipped_count, 1);
         assert_eq!(report.skipped[0].reason, "app.exe is running");
         assert!(e.junk.join("App/Logs/x.log").exists());
+    }
+
+    #[test]
+    fn secure_delete_overwrites_green_and_yellow_but_red_still_goes_to_the_bin() {
+        let e = env();
+        setup(&e);
+        let c = ctx(&e, &[]);
+        let scan = scan(&rules(RULES, &c), &c, &CancelToken::new());
+        let mut plan = plan_rules(
+            &scan,
+            &["test.cache".into(), "test.logs".into()],
+            &HashSet::new(),
+        );
+        let mine = e.junk.join("mine.doc");
+        write(&mine, 10);
+        let (manual, _) = plan_manual(std::slice::from_ref(&mine), &c);
+        plan.merge(manual);
+        let report = execute(
+            &plan,
+            &c,
+            &e.store,
+            &e.data,
+            &ExecOptions {
+                green_to_bin: false,
+                label: "Cleaner".into(),
+                secure: true,
+            },
+            &|_, _| {},
+            &CancelToken::new(),
+        );
+        assert_eq!(report.skipped_count, 0, "{:?}", report.skipped);
+        assert_eq!(report.wiped_count, 3, "two green files and one yellow");
+        assert_eq!(report.binned_count, 1, "the red file still goes to the bin");
+        assert!(!e.junk.join("App/Logs/x.log").exists());
+        let batch = e.store.batch(report.batch_id.as_deref().unwrap()).unwrap();
+        assert_eq!(batch.items.len(), 1);
+        assert_eq!(batch.items[0].original, mine);
+        let log = std::fs::read_to_string(e.data.join("logs/cleanup.log")).unwrap();
+        assert_eq!(log.matches("\"wiped\"").count(), 3, "{log}");
     }
 
     #[test]
@@ -1287,6 +1356,7 @@ mod tests {
             &ExecOptions {
                 green_to_bin: false,
                 label: "Cleaner".into(),
+                secure: false,
             },
             &|_, _| {},
             &CancelToken::new(),
@@ -1328,6 +1398,7 @@ mod tests {
             &ExecOptions {
                 green_to_bin: false,
                 label: "Cleaner".into(),
+                secure: false,
             },
             &|_, _| {},
             &CancelToken::new(),
@@ -1362,6 +1433,7 @@ mod tests {
             &ExecOptions {
                 green_to_bin: false,
                 label: "Cleaner".into(),
+                secure: false,
             },
             &|_, _| {},
             &CancelToken::new(),
@@ -1393,6 +1465,7 @@ mod tests {
             &ExecOptions {
                 green_to_bin: false,
                 label: "Your selections".into(),
+                secure: false,
             },
             &|_, _| {},
             &CancelToken::new(),
@@ -1419,6 +1492,7 @@ mod tests {
             &ExecOptions {
                 green_to_bin: false,
                 label: "Cleaner".into(),
+                secure: false,
             },
             &|_, _| {},
             &cancel,
