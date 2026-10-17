@@ -1,6 +1,6 @@
 [package]
 name = "cleaner-core"
-description = "Scanner, MFT reader, snapshots, and (later) the cleaning engine. No UI code."
+description = "Scanner, MFT reader, snapshots, safety guard, rules engine, and recovery bin. No UI code."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,6 +16,7 @@ rayon.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+toml.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
@@ -24,7 +25,10 @@ libc.workspace = true
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_IO",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
 ] }

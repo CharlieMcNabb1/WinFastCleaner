@@ -1,0 +1,87 @@
+# Built-in cleaning rules: developer tool caches.
+# These are yellow (optional): everything here can be downloaded again, but
+# that takes time and bandwidth.
+# Format: docs/rule-format.md. Written from scratch for WinFastCleaner.
+
+[[rule]]
+id = "dev.npm-cache"
+name = "npm cache"
+group = "Developer tools"
+tier = "yellow"
+description = "Packages npm downloaded before."
+lose = "npm downloads packages again the next time you install them."
+paths = ['%LOCALAPPDATA%\npm-cache', '%APPDATA%\npm-cache']
+
+[[rule]]
+id = "dev.yarn-cache"
+name = "Yarn cache"
+group = "Developer tools"
+tier = "yellow"
+description = "Packages Yarn downloaded before."
+lose = "Yarn downloads packages again the next time you install them."
+paths = ['%LOCALAPPDATA%\Yarn\Cache']
+
+[[rule]]
+id = "dev.pip-cache"
+name = "pip cache"
+group = "Developer tools"
+tier = "yellow"
+description = "Python packages pip downloaded or built before."
+lose = "pip downloads packages again the next time you install them."
+paths = ['%LOCALAPPDATA%\pip\Cache']
+
+[[rule]]
+id = "dev.nuget-cache"
+name = "NuGet HTTP cache"
+group = "Developer tools"
+tier = "yellow"
+description = "Package downloads NuGet cached."
+lose = "NuGet downloads packages again on the next restore."
+paths = ['%LOCALAPPDATA%\NuGet\v3-cache', '%LOCALAPPDATA%\NuGet\http-cache']
+
+[[rule]]
+id = "dev.gradle-cache"
+name = "Gradle caches"
+group = "Developer tools"
+tier = "yellow"
+description = "Dependencies and build outputs Gradle cached."
+lose = "Your next Gradle build downloads dependencies again and takes longer."
+paths = ['%USERPROFILE%\.gradle\caches']
+close_apps = ["java.exe", "javaw.exe"]
+
+[[rule]]
+id = "dev.maven-repository"
+name = "Maven local repository"
+group = "Developer tools"
+tier = "yellow"
+description = "Libraries Maven downloaded for your projects."
+lose = "Your next Maven build downloads libraries again. Libraries you installed locally (mvn install) are removed too."
+paths = ['%USERPROFILE%\.m2\repository']
+close_apps = ["java.exe", "javaw.exe"]
+
+[[rule]]
+id = "dev.cargo-registry-cache"
+name = "Cargo download cache"
+group = "Developer tools"
+tier = "yellow"
+description = "Compressed Rust crates Cargo downloaded."
+lose = "Cargo downloads crates again when it needs them."
+paths = ['%USERPROFILE%\.cargo\registry\cache']
+
+[[rule]]
+id = "dev.go-build-cache"
+name = "Go build cache"
+group = "Developer tools"
+tier = "yellow"
+description = "Compiled packages the Go tool cached."
+lose = "Your next Go build takes longer."
+paths = ['%LOCALAPPDATA%\go-build']
+
+[[rule]]
+id = "dev.user-cache"
+name = "~/.cache folder"
+group = "Developer tools"
+tier = "yellow"
+description = "Caches that command-line tools keep in the .cache folder of your profile."
+lose = "Tools download or rebuild what they cached, which can take time."
+paths = ['%USERPROFILE%\.cache']
