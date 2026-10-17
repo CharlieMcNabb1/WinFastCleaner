@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use cleaner_core::platform;
 use cleaner_core::progress::CancelToken;
 use cleaner_core::scan::{ScanMethod, ScanOptions, scan};
+use cleaner_core::tree::flags;
 
 fn within_one_percent(a: u64, b: u64) -> bool {
     let (a, b) = (a as f64, b as f64);
@@ -57,8 +58,28 @@ fn mft_scan_matches_walker_on_system_folder() {
         walk.summary.size,
         walk.summary.duration_ms
     );
-    assert!(within_one_percent(mft.summary.files, walk.summary.files));
-    assert!(within_one_percent(mft.summary.size, walk.summary.size));
+    // Some system folders deny listing even to administrators (for example
+    // Defender's). The MFT still sees their files, so leave those folders
+    // out of the comparison.
+    let (mut mft_files, mut mft_size) = (mft.summary.files, mft.summary.size);
+    for id in 0..walk.tree.len() as u32 {
+        if walk.tree.node(id).has(flags::UNREADABLE)
+            && let Some(m) = mft.tree.find(&walk.tree.path(id))
+        {
+            mft_files -= mft.tree.node(m).files();
+            mft_size -= mft.tree.node(m).size();
+        }
+    }
+    assert!(
+        within_one_percent(mft_files, walk.summary.files),
+        "files: MFT {mft_files} vs walk {}",
+        walk.summary.files
+    );
+    assert!(
+        within_one_percent(mft_size, walk.summary.size),
+        "size: MFT {mft_size} vs walk {}",
+        walk.summary.size
+    );
 }
 
 #[test]

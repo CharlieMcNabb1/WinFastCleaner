@@ -384,7 +384,6 @@ mod sys {
 
 use sys::{allocated_size, attribute_flags, hard_link_key, is_dir_link};
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
