@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-recovery-empty"
+description = "Enables the recovery_empty command without any pre-configured scope."
+commands.allow = ["recovery_empty"]
+
+[[permission]]
+identifier = "deny-recovery-empty"
+description = "Denies the recovery_empty command without any pre-configured scope."
+commands.deny = ["recovery_empty"]

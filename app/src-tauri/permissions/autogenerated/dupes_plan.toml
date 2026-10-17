@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dupes-plan"
+description = "Enables the dupes_plan command without any pre-configured scope."
+commands.allow = ["dupes_plan"]
+
+[[permission]]
+identifier = "deny-dupes-plan"
+description = "Denies the dupes_plan command without any pre-configured scope."
+commands.deny = ["dupes_plan"]

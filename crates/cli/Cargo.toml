@@ -1,0 +1,31 @@
+[package]
+name = "cleaner-cli"
+description = "Command-line interface over cleaner-core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "wfc"
+path = "src/main.rs"
+
+# The same scheduled clean as `wfc clean --scheduled`, without a console
+# window, for Windows Task Scheduler.
+[[bin]]
+name = "wfcw"
+path = "src/wfcw.rs"
+
+[dependencies]
+cleaner-core.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

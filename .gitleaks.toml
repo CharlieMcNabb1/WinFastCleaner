@@ -1,0 +1,6 @@
+title = "WinFastCleaner gitleaks config"
+
+# Use gitleaks' built-in rule set. Add narrowly scoped allowlist entries here
+# only for verified false positives, with a comment explaining each one.
+[extend]
+useDefault = true

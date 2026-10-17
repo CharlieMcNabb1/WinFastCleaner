@@ -1,0 +1,67 @@
+# Built-in cleaning rules: common apps.
+# Format: docs/rule-format.md. Written from scratch for WinFastCleaner.
+
+[[rule]]
+id = "discord.cache"
+name = "Discord cache"
+group = "Apps"
+tier = "green"
+description = "Images, videos, and web content Discord keeps to show chats faster."
+lose = "Nothing. Discord downloads what it needs again. You stay signed in."
+paths = [
+    '%APPDATA%\discord\Cache',
+    '%APPDATA%\discord\Code Cache',
+    '%APPDATA%\discord\GPUCache',
+]
+close_apps = ["discord.exe"]
+
+[[rule]]
+id = "teams-classic.cache"
+name = "Microsoft Teams (classic) cache"
+group = "Apps"
+tier = "green"
+description = "Web content and images cached by the classic Teams app."
+lose = "Nothing. Teams may start a little slower once. You stay signed in."
+paths = [
+    '%APPDATA%\Microsoft\Teams\Cache',
+    '%APPDATA%\Microsoft\Teams\Code Cache',
+    '%APPDATA%\Microsoft\Teams\GPUCache',
+    '%APPDATA%\Microsoft\Teams\Service Worker\CacheStorage',
+]
+close_apps = ["teams.exe"]
+
+[[rule]]
+id = "vscode.cache"
+name = "Visual Studio Code cache"
+group = "Apps"
+tier = "green"
+description = "Web content, compiled code, and downloaded extension packages cached by VS Code."
+lose = "Nothing. VS Code may start a little slower once. Your settings and extensions stay."
+paths = [
+    '%APPDATA%\Code\Cache',
+    '%APPDATA%\Code\CachedData',
+    '%APPDATA%\Code\Code Cache',
+    '%APPDATA%\Code\GPUCache',
+    '%APPDATA%\Code\CachedExtensionVSIXs',
+]
+close_apps = ["code.exe"]
+
+[[rule]]
+id = "steam.web-cache"
+name = "Steam web cache"
+group = "Apps"
+tier = "green"
+description = "Store and community pages cached by the Steam client."
+lose = "Nothing. Steam loads the pages again. Your games are not affected."
+paths = ['%LOCALAPPDATA%\Steam\htmlcache']
+close_apps = ["steam.exe", "steamwebhelper.exe"]
+
+[[rule]]
+id = "spotify.cache"
+name = "Spotify cache"
+group = "Apps"
+tier = "yellow"
+description = "Music Spotify saved while streaming."
+lose = "Songs stream again from the internet. Songs you downloaded for offline listening may need to download again."
+paths = ['%LOCALAPPDATA%\Spotify\Storage']
+close_apps = ["spotify.exe"]

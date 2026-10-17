@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-exclude-node"
+description = "Enables the exclude_node command without any pre-configured scope."
+commands.allow = ["exclude_node"]
+
+[[permission]]
+identifier = "deny-exclude-node"
+description = "Denies the exclude_node command without any pre-configured scope."
+commands.deny = ["exclude_node"]

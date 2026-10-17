@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-privacy-survey"
+description = "Enables the privacy_survey command without any pre-configured scope."
+commands.allow = ["privacy_survey"]
+
+[[permission]]
+identifier = "deny-privacy-survey"
+description = "Denies the privacy_survey command without any pre-configured scope."
+commands.deny = ["privacy_survey"]

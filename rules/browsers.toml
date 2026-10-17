@@ -1,0 +1,79 @@
+# Built-in cleaning rules: web browser caches.
+# Only caches are cleaned here. History, cookies, passwords, and other
+# personal browser data are never touched by these rules.
+# Format: docs/rule-format.md. Written from scratch for WinFastCleaner.
+
+[[rule]]
+id = "chrome.cache"
+name = "Google Chrome cache"
+group = "Google Chrome"
+tier = "green"
+description = "Copies of web pages, images, and scripts Chrome keeps to load sites faster."
+lose = "Nothing. Sites may load a little slower the first time. You stay signed in."
+paths = [
+    '%LOCALAPPDATA%\Google\Chrome\User Data\*\Cache',
+    '%LOCALAPPDATA%\Google\Chrome\User Data\*\Code Cache',
+    '%LOCALAPPDATA%\Google\Chrome\User Data\*\GPUCache',
+    '%LOCALAPPDATA%\Google\Chrome\User Data\ShaderCache',
+    '%LOCALAPPDATA%\Google\Chrome\User Data\GrShaderCache',
+]
+close_apps = ["chrome.exe"]
+
+[[rule]]
+id = "edge.cache"
+name = "Microsoft Edge cache"
+group = "Microsoft Edge"
+tier = "green"
+description = "Copies of web pages, images, and scripts Edge keeps to load sites faster."
+lose = "Nothing. Sites may load a little slower the first time. You stay signed in."
+paths = [
+    '%LOCALAPPDATA%\Microsoft\Edge\User Data\*\Cache',
+    '%LOCALAPPDATA%\Microsoft\Edge\User Data\*\Code Cache',
+    '%LOCALAPPDATA%\Microsoft\Edge\User Data\*\GPUCache',
+    '%LOCALAPPDATA%\Microsoft\Edge\User Data\ShaderCache',
+    '%LOCALAPPDATA%\Microsoft\Edge\User Data\GrShaderCache',
+]
+close_apps = ["msedge.exe"]
+
+[[rule]]
+id = "brave.cache"
+name = "Brave cache"
+group = "Brave"
+tier = "green"
+description = "Copies of web pages, images, and scripts Brave keeps to load sites faster."
+lose = "Nothing. Sites may load a little slower the first time. You stay signed in."
+paths = [
+    '%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data\*\Cache',
+    '%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data\*\Code Cache',
+    '%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data\*\GPUCache',
+    '%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data\ShaderCache',
+]
+close_apps = ["brave.exe"]
+
+[[rule]]
+id = "opera.cache"
+name = "Opera cache"
+group = "Opera"
+tier = "green"
+description = "Copies of web pages, images, and scripts Opera keeps to load sites faster."
+lose = "Nothing. Sites may load a little slower the first time. You stay signed in."
+paths = [
+    '%LOCALAPPDATA%\Opera Software\Opera Stable\Cache',
+    '%LOCALAPPDATA%\Opera Software\Opera Stable\*\Cache',
+    '%APPDATA%\Opera Software\Opera Stable\Code Cache',
+    '%APPDATA%\Opera Software\Opera Stable\GPUCache',
+]
+close_apps = ["opera.exe"]
+
+[[rule]]
+id = "firefox.cache"
+name = "Firefox cache"
+group = "Firefox"
+tier = "green"
+description = "Copies of web pages, images, and scripts Firefox keeps to load sites faster."
+lose = "Nothing. Sites may load a little slower the first time. You stay signed in."
+paths = [
+    '%LOCALAPPDATA%\Mozilla\Firefox\Profiles\*\cache2',
+    '%LOCALAPPDATA%\Mozilla\Firefox\Profiles\*\startupCache',
+]
+close_apps = ["firefox.exe"]
