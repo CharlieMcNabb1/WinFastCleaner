@@ -11,7 +11,7 @@ protection.
 | 1 | **Protected paths blocklist.** Never delete inside `C:\Windows` (except temp, log, and update-cache subfolders that rules list), `C:\Program Files`, `C:\Program Files (x86)`, `C:\ProgramData` (except rule-listed caches), the root of any drive, a user profile root, `WinSxS`, `System32`, boot and recovery folders, or the app's own files. Checked on the **final resolved path**, after expanding variables, symlinks, and junctions. | `safety::Guard`, called by the rules loader, the junk scan, the plan builder, and again by the executor on the path the open file handle reports. |
 | 2 | **No following links.** Never follow symlinks, junctions, or mount points while finding or deleting files. | `rules::expand_path`, `cleaner::scan`, `fsops::open` (opens the link itself, never its target). |
 | 3 | **Rules define green and yellow.** Only files matched by a rule can be green or yellow. Anything picked by hand is red. | `rules` (a rule can't be red), `cleaner::plan_manual` (always red). |
-| 4 | **Red is never automatic.** Red items are never pre-selected, never part of scheduled cleaning, and always go to the recovery bin. | `cleaner::execute` (only green may skip the bin), the UI's defaults, `wfc clean` (rules only). |
+| 4 | **Red is never automatic.** Red items are never pre-selected, never part of scheduled cleaning, and always go to the recovery bin. | `cleaner::execute` (only green may skip the bin), the UI's defaults, `wfc clean` (rules only), `schedule::select_rules` and `schedule::run` (rules only; the plan is filtered for red again before acting). |
 | 5 | **Exclusions always win** over every rule and selection. | `settings::Exclusions`, checked by the scan, the plan builder, the executor, and empty-folder removal. |
 | 6 | **Dry run first.** Every clean computes the exact file list and size first, and that list is what gets acted on. | `cleaner::plan_*` then `cleaner::execute`. The app only executes a plan the user previewed, once. `wfc clean --dry-run` prints the list. |
 | 7 | **Fail safe.** Locked, in-use, or permission-denied files are skipped and reported. One failure never aborts the batch or corrupts the recovery index. | `cleaner::execute` (per-file outcomes), `recovery` (write-ahead index). |
@@ -142,6 +142,48 @@ digit), so it can never be read as an option. Nothing is picked by default.
 An update runs that app's own installer; it is never stopped halfway (Cancel
 takes effect between apps), because stopping an installer midway could
 leave the app broken.
+
+## Scheduled cleaning
+
+Scheduled cleaning is off until the user turns it on. It is a Windows Task
+Scheduler task (`\WinFastCleaner\Scheduled cleaning`) that runs
+`wfcw.exe clean --scheduled` from the install folder, as the signed-in user
+with the least privileges (never elevated). `wfcw.exe` accepts only that
+command line. Each run:
+
+- uses only cleaning rules: safe (green) ones, and optional (yellow) ones
+  only if the user chose them (those go to the recovery bin). Red items can't
+  be selected, and the plan is filtered for red again before acting;
+- goes through the same scan, plan, and link-safe execute as any other
+  clean, with the guard and the exclusions;
+- skips rules that need administrator rights or whose app is open, and
+  reports them;
+- asks nothing, and records what it did in the log and in
+  `scheduled-last.json`, which Settings shows.
+
+The task's settings change only through the app's own command, which updates
+the task first and the settings only if that worked, so the two stay in step.
+
+## Tray monitor
+
+The tray monitor (`wfc-tray.exe`) is a separate, small program with no web
+view. It only reads: every hour it runs the health check (and, at most every
+six hours, a read-only junk scan) and shows notifications, each kind at most
+once a day. It never cleans or changes anything. It starts at sign-in through
+a value in the user's own `Run` key, added and removed only by the Settings
+switch. A second copy refuses to start.
+
+## Installing and uninstalling
+
+The installer installs for all users into `C:\Program Files\WinFastCleaner`,
+a folder ordinary programs can't change (the per-user location Tauri would
+otherwise use is the data folder itself). It never starts the app's
+programs with its administrator rights. Uninstalling first runs
+`wfc remove-integration`, which deletes the scheduled task and the tray's
+sign-in entry and closes the tray, then removes the program files. The data
+folder (settings, logs, and the recovery bin, which may hold the user's
+files) is kept; the README tells the user to restore what they want and then
+delete it.
 
 ## Health check
 

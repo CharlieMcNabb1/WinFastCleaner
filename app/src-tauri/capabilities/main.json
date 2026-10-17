@@ -50,6 +50,10 @@
     "allow-updates-apply",
     "allow-updates-cancel",
     "allow-health-check",
+    "allow-schedule-status",
+    "allow-schedule-save",
+    "allow-tray-status",
+    "allow-tray-set",
     "dialog:allow-open"
   ]
 }

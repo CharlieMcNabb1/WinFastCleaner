@@ -1,5 +1,6 @@
 //! Settings commands: the cleaner options, recovery bin limits, exclusions,
-//! and the custom rules folder.
+//! health thresholds, the theme, and the custom rules folder. (Scheduled
+//! cleaning and the tray monitor are in `automation_cmds`.)
 
 use serde::Serialize;
 use tauri::State;
@@ -43,9 +44,16 @@ pub fn get_settings() -> CmdResult<SettingsView> {
 }
 
 /// Validates and saves settings. Invalid values are refused, not adjusted.
+/// The schedule and the tray monitor are kept as they are: they change
+/// only through their own commands, which also update Windows (the task
+/// and the sign-in entry), so the two can't drift apart.
 #[tauri::command(async)]
-pub fn save_settings(settings: Settings) -> CmdResult<SettingsView> {
-    settings.save(&data_dir()?).map_err(|e| e.to_string())?;
+pub fn save_settings(mut settings: Settings) -> CmdResult<SettingsView> {
+    let data = data_dir()?;
+    let current = Settings::load(&data);
+    settings.schedule = current.schedule;
+    settings.tray = current.tray;
+    settings.save(&data).map_err(|e| e.to_string())?;
     view(settings)
 }
 

@@ -48,6 +48,24 @@ npm test                                      # frontend unit tests
 npm run tauri dev                             # run the desktop app
 ```
 
+### The installer (Windows)
+
+```powershell
+cd app; npm ci --ignore-scripts; cd ..
+scripts/build-installer.ps1        # builds wfc, wfcw, wfc-tray, and the NSIS installer
+scripts/test-installer.ps1 (Get-ChildItem target/release/bundle/nsis/*-setup.exe).FullName
+```
+
+`test-installer.ps1` installs for all users (run it from an elevated
+PowerShell, ideally in a throwaway VM), checks the programs, and uninstalls.
+
+### Releases
+
+Bump the version in `Cargo.toml` (workspace), `app/package.json`, and
+`app/src-tauri/tauri.conf.json`, merge, then push a tag such as `v0.2.0`.
+`release.yml` builds and tests the installer and creates a **draft** GitHub
+release with SHA-256 checksums for a maintainer to review and publish.
+
 ### NTFS (MFT reader) tests on Linux
 
 The MFT reader is tested against a real NTFS image built with `mkntfs`. Root

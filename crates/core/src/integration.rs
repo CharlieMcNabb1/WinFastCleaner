@@ -58,18 +58,12 @@ mod imp {
             .map(|(t, _)| t)
     }
 
+    /// The tray's hidden window (a top-level window that is never shown).
     fn tray_window() -> windows_sys::Win32::Foundation::HWND {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowExW, HWND_MESSAGE};
+        use windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW;
         let class: Vec<u16> = TRAY_WINDOW_CLASS.encode_utf16().chain(Some(0)).collect();
         // SAFETY: `class` is NUL-terminated; a null title matches any.
-        unsafe {
-            FindWindowExW(
-                HWND_MESSAGE,
-                std::ptr::null_mut(),
-                class.as_ptr(),
-                std::ptr::null(),
-            )
-        }
+        unsafe { FindWindowW(class.as_ptr(), std::ptr::null()) }
     }
 
     /// Whether the tray monitor is running (for this user).

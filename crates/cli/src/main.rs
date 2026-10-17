@@ -90,6 +90,10 @@ enum Command {
     /// logs, and recovery bin are kept.
     #[command(hide = true)]
     RemoveIntegration,
+    /// Close the tray monitor if it is running (used by the installer before
+    /// replacing its program).
+    #[command(hide = true)]
+    CloseTray,
 }
 
 fn main() -> ExitCode {
@@ -121,6 +125,13 @@ fn main() -> ExitCode {
         Command::Grew(args) => files::grew_cmd(args),
         Command::Snapshots { json } => files::snapshots_cmd(json),
         Command::RemoveIntegration => remove_integration(),
+        Command::CloseTray => {
+            if cleaner_core::integration::close_tray() {
+                // Give it a moment to remove its icon and exit.
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+            Ok(())
+        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

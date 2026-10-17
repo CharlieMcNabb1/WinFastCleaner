@@ -13,6 +13,7 @@
   import StartupView from "./components/StartupView.svelte";
   import UpdatesView from "./components/UpdatesView.svelte";
   import { backend } from "./lib/backend.ts";
+  import { applyTheme } from "./lib/theme.svelte.ts";
   import type { AppInfo, CleanerFocus } from "./lib/types.ts";
 
   type Tab =
@@ -74,8 +75,14 @@
   }
 
   onMount(async () => {
+    const api = await backend();
     try {
-      info = await (await backend()).appInfo();
+      applyTheme((await api.getSettings()).settings.theme);
+    } catch {
+      // Keep following Windows.
+    }
+    try {
+      info = await api.appInfo();
     } catch {
       info = null;
     }
@@ -148,7 +155,9 @@
       <div class="pane" hidden={tab !== "recover"}><RecoverView active={tab === "recover"} /></div>
     {/if}
     {#if opened.has("settings")}
-      <div class="pane" hidden={tab !== "settings"}><SettingsView {info} active={tab === "settings"} /></div>
+      <div class="pane" hidden={tab !== "settings"}>
+        <SettingsView {info} active={tab === "settings"} onNavigate={go} />
+      </div>
     {/if}
   </main>
 </div>
