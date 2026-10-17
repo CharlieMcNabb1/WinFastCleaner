@@ -90,6 +90,18 @@ disabled.
    above the rule's location, each one re-checked), the bin's limits are
    applied, and every outcome is logged.
 
+## File finders
+
+The large/old file finder and the duplicate finder only list files. Their
+results are always red tier: nothing is picked for the user, and picked
+files are moved to the recovery bin through the same plan and checks as any
+other hand-picked item. Protected and excluded files are never listed.
+
+For duplicates, the core refuses a plan that would remove every copy in a
+group, or whose kept copy no longer exists; the UI also never lets the last
+copy be picked. Hashing opens files read-only without following links, and
+skips cloud placeholders so it never downloads them.
+
 ## Recovery bin
 
 Yellow and red items (and green ones if the user asks) are **moved**, never

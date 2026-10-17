@@ -4,8 +4,8 @@ A fast, safe, transparent disk cleaner and system health tool for Windows 10
 and 11 (x64). WinFastCleaner is an open-source alternative to CCleaner. It is
 not affiliated with or endorsed by CCleaner or Piriform/Gen Digital.
 
-> **Status: early development (Phase 2 of 6).** The disk scanner, Disk view,
-> cleaner, and recovery bin work today. It has not been tested widely on real
+> **Status: early development (Phase 3 of 6).** The disk scanner, Disk view,
+> cleaner, recovery bin, file finders, and "What grew" work today. It has not been tested widely on real
 > PCs yet, so preview what it will clean and keep the recovery bin on. See
 > [Roadmap](#roadmap).
 
@@ -152,7 +152,7 @@ Settings if you prefer.
 |---|---|---|
 | 1 | Workspace, scanner (parallel walk and NTFS MFT), Disk tab with tree and treemap, scan snapshots | **Built** |
 | 2 | Rule files, built-in rules, tiered Cleaner tab, parallel deletion, recovery bin, exclusions, safety rules, `--dry-run` | **Built** |
-| 3 | Large/old file finder, duplicate finder, "What grew" | Planned |
+| 3 | Large/old file finder, duplicate finder, "What grew" | **Built** |
 | 4 | Privacy cleaning, secure delete | Planned |
 | 5 | Startup manager, winget updater, health check, Home dashboard | Planned |
 | 6 | Scheduled cleaning, tray monitor, settings, installer, docs | Planned |
@@ -181,12 +181,23 @@ described below.
   closed app are shown but skipped, and say why. **Deep clean** runs
   Windows' own component store cleanup (DISM) separately; it is slow and
   needs administrator rights.
+- **Files** finds your own **large and old files** (filter by size, age,
+  and type: video, archives, installers, disk images, …) and
+  **duplicates** (files with identical contents, compared by size and then
+  by a BLAKE3 hash of the whole file). Nothing is picked for you; for
+  duplicates, the last copy in a group can never be picked. Picked files go
+  to the recovery bin. A search reuses the Disk tab's scan of the same
+  drive, or scans first.
+- **What grew** compares two scan snapshots of a drive and lists the folders
+  that grew or shrank the most, such as "Discord cache +3.1 GB since Oct 9".
+  Each entry opens in the Disk view, and in the Cleaner when a rule covers
+  it.
 - **Recover** lists recovery bin batches, newest first, with bin usage per
   drive. Restore a whole batch or chosen files, delete a batch, or empty the
   bin.
-- **Settings**: send safe items to the bin too, recovery bin limits, your
-  exclusions (folders, files, and patterns such as `*.psd`), and your custom
-  rules folder.
+- **Settings**: send safe items to the bin too, recovery bin limits, how
+  long to keep scan snapshots, your exclusions (folders, files, and patterns
+  such as `*.psd`), and your custom rules folder.
 
 When the app isn't running as administrator, it says so and offers **Restart
 as administrator** for the fast MFT scan and admin-only cleaning.
@@ -210,7 +221,18 @@ wfc recover show <BATCH>                    # the files in a batch
 wfc recover restore <BATCH> [--item N] [--on-conflict skip|keep-both|overwrite]
 wfc recover delete <BATCH>                  # delete one batch for good
 wfc recover empty                           # empty the bin
+
+wfc find large C:\                          # 200 largest files over 100 MB
+wfc find large D:\ --min-size 1GB --kind video
+wfc find old C:\Users --days 730            # unused for two years
+wfc dupes D:\Photos                         # identical files (full-content hash)
+wfc snapshots                               # saved scan snapshots
+wfc grew C:\                                # what grew since the previous scan
+wfc grew C:\ --back 5                       # ...or since five scans ago
 ```
+
+`find` and `dupes` only list files; picking them for the recovery bin is
+done in the app.
 
 `wfc clean` never cleans review (red) items, always shows what it found
 before acting, and refuses to run without `--yes` when there is no terminal

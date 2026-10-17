@@ -24,6 +24,9 @@
 │  fsops.rs     open without following links; delete/rename by handle   │
 │  recovery.rs  recovery bin: write-ahead index, restore, eviction       │
 │  settings.rs  settings, exclusions, bin limits                         │
+│  finder.rs    large and old files (from a scan tree)                   │
+│  dupes.rs     duplicates: size → partial BLAKE3 → full BLAKE3          │
+│  grew.rs      "What grew": compares two snapshots                      │
 │  log.rs       local cleanup log (JSON lines, rotated)                  │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -151,6 +154,29 @@ against other processes, and a batch is written before any file moves, so a
 crash can't leave the index wrong. Restore, delete, empty, and eviction all
 act through the same link-safe file operations.
 
+## File finders and "What grew"
+
+Both finders work on a finished scan's `Tree`, so after a scan (or reusing
+the Disk tab's scan of the same root) they start instantly.
+
+- `finder::find` walks the tree's file nodes, keeps those over the size
+  limit (and, for old files, not modified since the cutoff), largest first,
+  then checks each candidate against the guard and the exclusions and reads
+  fresh metadata, including the last-access time when Windows records it.
+- `dupes::find` groups files by size, then hashes the first and last 16 KB
+  of each remaining candidate (files up to 32 KB are hashed whole here), then
+  hashes whole files with BLAKE3, in parallel. Only the full hash decides.
+  Files are opened with `fsops::open_read`, which never follows links and
+  refuses cloud placeholders (reading those would download them). Several
+  names of one hard-linked file are recognized by their file ID and are not
+  reported as copies.
+- `dupes::plan_removal` turns picked copies into a red-tier plan, and refuses
+  if any group would lose every copy or its kept copy is gone.
+- `grew::compare` matches two snapshots' folders by path. A folder missing on
+  one side was under the snapshot threshold (50 MB). A change is listed at
+  the most specific folder that explains it: a folder is hidden when one of
+  its subfolders accounts for at least 75% of its change.
+
 ## Elevation
 
 The app runs unelevated by default. Admin rights are needed for the fast
@@ -200,6 +226,7 @@ never links. Phase 3's "What grew" view compares two snapshots.
 | Cleaning and recovery in temp folders: protected paths, links and junctions, exclusions, locked files, running apps, crash recovery of the index, restore conflicts, eviction | `crates/core/src/{cleaner,recovery}.rs` | Windows + Linux CI |
 | MFT reader vs. walker on a real NTFS image (hard links, attribute lists, sparse files, ADS, junctions, symlinks, Unicode) | `crates/core/tests/ntfs_image.rs` + `scripts/ntfs-test-image.sh` | Linux CI |
 | MFT scan vs. walker on a real Windows folder, plus a full system-drive MFT scan | `crates/core/tests/windows_volume.rs` | Windows CI (elevated) |
-| CLI end-to-end, including dry run, clean, and restore in temp folders | `crates/cli/tests/cli.rs` | Windows + Linux CI |
+| File finders and comparisons: largest/oldest files, duplicates decided by full contents (same start and end but different middle are not duplicates), hard links, never removing every copy, growth at the right folder | `crates/core/src/{finder,dupes,grew}.rs` | Windows + Linux CI |
+| CLI end-to-end, including dry run, clean, restore, finders, and What grew in temp folders | `crates/cli/tests/cli.rs` | Windows + Linux CI |
 | Frontend formatting, treemap layout, cleaner selection logic | `app/src/lib/*.test.ts` | Windows CI |
 | UI in a browser with fake data | `npm run dev:mock` | Local |
