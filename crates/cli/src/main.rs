@@ -4,6 +4,7 @@
 //! first (`--dry-run` stops there) and asks before changing anything.
 
 mod clean;
+mod files;
 
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
@@ -16,7 +17,7 @@ use cleaner_core::format::{format_size, percent};
 use cleaner_core::platform;
 use cleaner_core::progress::{CancelToken, ScanPhase, ScanProgress};
 use cleaner_core::scan::{Scan, ScanOptions, ScanSummary, scan};
-use cleaner_core::snapshot::{self, Snapshot};
+use cleaner_core::snapshot;
 use cleaner_core::tree::{NodeId, Tree, flags};
 
 #[derive(Parser, Debug)]
@@ -72,6 +73,18 @@ enum Command {
     /// Look into, restore from, or empty the recovery bin.
     #[command(subcommand)]
     Recover(clean::RecoverCommand),
+    /// List large or old files (read-only).
+    #[command(subcommand)]
+    Find(files::FindCommand),
+    /// List files with identical contents (read-only).
+    Dupes(files::DupesArgs),
+    /// Show which folders grew or shrank between two scans.
+    Grew(files::GrewArgs),
+    /// List saved scan snapshots.
+    Snapshots {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -98,6 +111,10 @@ fn main() -> ExitCode {
         Command::Rules(cmd) => clean::rules_cmd(cmd),
         Command::Clean(args) => clean::clean_cmd(args),
         Command::Recover(cmd) => clean::recover_cmd(cmd),
+        Command::Find(cmd) => files::find_cmd(cmd),
+        Command::Dupes(args) => files::dupes_cmd(args),
+        Command::Grew(args) => files::grew_cmd(args),
+        Command::Snapshots { json } => files::snapshots_cmd(json),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -187,18 +204,13 @@ fn run_scan(args: ScanArgs) -> CliResult {
     Ok(())
 }
 
-fn save_snapshot(scan: &Scan, quiet: bool) {
-    let Some(dir) = cleaner_core::paths::default_data_dir().map(|d| d.join("snapshots")) else {
+pub(crate) fn save_snapshot(scan: &Scan, quiet: bool) {
+    let Some(data) = cleaner_core::paths::default_data_dir() else {
         return;
     };
-    let snap = Snapshot::from_scan(
-        scan,
-        snapshot::DEFAULT_MIN_FOLDER_SIZE,
-        snapshot::DEFAULT_MAX_DEPTH,
-    );
-    match snapshot::save(&dir, &snap) {
+    let days = cleaner_core::settings::Settings::load(&data).snapshot_days;
+    match snapshot::record(&data, scan, days) {
         Ok(path) => {
-            let _ = snapshot::prune(&dir, snapshot::DEFAULT_RETENTION_DAYS, snap.taken_at);
             if !quiet {
                 eprintln!("Snapshot saved: {}", path.display());
             }

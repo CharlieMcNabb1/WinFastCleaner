@@ -329,3 +329,149 @@ fn unknown_rules_are_an_error() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("no rule named"));
 }
+
+// ------------------------------------------------------------ files
+
+fn sized(path: &std::path::Path, len: u64) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::File::create(path).unwrap().set_len(len).unwrap();
+}
+
+#[test]
+fn dupes_are_matched_by_full_contents() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap();
+    let body: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+    let mut almost = body.clone();
+    almost[150_000] ^= 1; // same size, start, and end; different middle
+    for (rel, data) in [
+        ("a/one.bin", &body),
+        ("b/two.bin", &body),
+        ("c/almost.bin", &almost),
+    ] {
+        let p = root.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, data).unwrap();
+    }
+    let out = wfc(&root)
+        .args([
+            "dupes",
+            "--no-mft",
+            "--no-snapshot",
+            "--json",
+            "--min-size",
+            "1KB",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    let groups = v["groups"].as_array().unwrap();
+    assert_eq!(groups.len(), 1, "{v}");
+    let names: Vec<&str> = groups[0]["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(names.len(), 2);
+    assert!(names[0].ends_with("one.bin") && names[1].ends_with("two.bin"));
+    assert_eq!(v["wasted"], 300_000);
+    // Nothing was changed.
+    assert!(root.join("a/one.bin").exists() && root.join("b/two.bin").exists());
+}
+
+#[test]
+fn find_large_and_old_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap().join("disk");
+    sized(&root.join("videos/movie.mkv"), 300 << 20);
+    sized(&root.join("setup.exe"), 120 << 20);
+    sized(&root.join("small.txt"), 10);
+    let out = wfc(tmp.path())
+        .args(["find", "large", "--no-mft", "--no-snapshot", "--json"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    let files = v["files"].as_array().unwrap();
+    assert_eq!(files.len(), 2, "{v}");
+    assert!(files[0]["path"].as_str().unwrap().ends_with("movie.mkv"));
+    assert_eq!(files[0]["kind"], "video");
+
+    let out = wfc(tmp.path())
+        .args([
+            "find",
+            "large",
+            "--no-mft",
+            "--no-snapshot",
+            "--json",
+            "--kind",
+            "installer",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    assert_eq!(v["files"].as_array().unwrap().len(), 1);
+
+    // Nothing here is a year old.
+    let out = wfc(tmp.path())
+        .args(["find", "old", "--no-mft", "--no-snapshot", "--json"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    assert!(v["files"].as_array().unwrap().is_empty(), "{v}");
+}
+
+#[test]
+fn grew_lists_the_folder_that_grew() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap();
+    sized(&root.join("stable/a.bin"), 80 << 20);
+    sized(&root.join("apps/chat/cache/c.bin"), 60 << 20);
+    let scan = |data: &std::path::Path| {
+        let out = wfc(data)
+            .args(["scan", "--quiet", "--no-mft"])
+            .arg(&root)
+            .output()
+            .unwrap();
+        ok(&out);
+    };
+    scan(data.path());
+    // Snapshot names have one-second resolution.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    sized(&root.join("apps/chat/cache/d.bin"), 900 << 20);
+    sized(&root.join("new-game/data.pak"), 200 << 20);
+    scan(data.path());
+
+    let out = wfc(data.path())
+        .args(["snapshots", "--json"])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    assert_eq!(v.as_array().unwrap().len(), 2, "{v}");
+
+    let out = wfc(data.path())
+        .args(["grew", "--json"])
+        .arg(root.display().to_string())
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    let grew: Vec<(&str, i64)> = v["grew"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["path"].as_str().unwrap(), c["delta"].as_i64().unwrap()))
+        .collect();
+    assert_eq!(grew.len(), 2, "{v}");
+    assert!(
+        grew[0].0.ends_with("cache"),
+        "most specific folder: {grew:?}"
+    );
+    assert_eq!(grew[0].1, 900 << 20);
+    assert!(grew[1].0.ends_with("new-game"), "{grew:?}");
+    assert_eq!(v["totalDelta"], 1100 << 20);
+}
