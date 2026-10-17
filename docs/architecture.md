@@ -5,7 +5,7 @@
 │  Svelte + TypeScript UI (app/src)                                      │
 │        │  invoke() / Channel (only commands granted in capabilities/)  │
 │        ▼                                                               │
-│  Rust commands (app/src-tauri/src/commands.rs)                         │
+│  Rust commands (app/src-tauri/src: commands, cleaning, recover, …)     │
 └────────┬───────────────────────────────────────────────────────────────┘
          │                         ┌──────────── crates/cli ─────────────┐
          │                         │  `wfc` command-line tool            │
@@ -17,7 +17,14 @@
 │  tree.rs      compact in-memory folder tree                            │
 │  snapshot.rs  folder-size snapshots for "What grew"                    │
 │  platform.rs  drives, free space, elevation, Win32 helpers             │
-│  (Phase 2+)   rules engine, deletion, recovery bin, safety checks      │
+│  safety.rs    the guard: protected paths, checked on final paths       │
+│  rules.rs     rule files: load, validate, expand paths                 │
+│  glob.rs      case-insensitive * ? ** patterns                         │
+│  cleaner.rs   junk scan → exact plan → link-safe execute               │
+│  fsops.rs     open without following links; delete/rename by handle   │
+│  recovery.rs  recovery bin: write-ahead index, restore, eviction       │
+│  settings.rs  settings, exclusions, bin limits                         │
+│  log.rs       local cleanup log (JSON lines, rotated)                  │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -107,13 +114,51 @@ Scanners push raw entries into a `TreeBuilder`. `finish()` then:
 Nodes live in flat arrays (about 56 bytes each plus the name), which keeps a
 multi-million-entry scan to a few hundred MB.
 
+## Cleaning
+
+The cleaner is split so that what the user previews is exactly what is
+acted on (see the [safety model](safety-model.md) for every check):
+
+1. `rules::load` reads the built-in rule files (compiled in) and the user's
+   rules folder, validating each rule ([format](rule-format.md)).
+2. `cleaner::scan(rules, context, cancel)` finds files for each rule in
+   parallel. The `Context` holds the guard, the variables (`%TEMP%`, …), the
+   exclusions, whether the process is elevated, and the running programs.
+   Each rule gets a status: ready, needs admin, app running, or nothing
+   found.
+3. `cleaner::plan_rules` (selected rules minus unticked files) or
+   `cleaner::plan_manual` (Disk view picks, always red) builds a `CleanPlan`:
+   the exact files with sizes and modified times.
+4. `cleaner::execute(plan, …)` records the recovery batch first, then acts on
+   each file in parallel through `fsops` (open without following links,
+   re-check, delete or rename through the same handle), removes emptied
+   folders, applies the bin's limits, writes the log, and measures the free
+   space gained.
+
+In the app, the backend keeps the junk scan and the previewed plan; the UI
+only sends rule ids, file indexes, and the plan id. A plan can be executed
+once. `wfc clean` runs the same steps, prints the scan, and asks before
+executing (`--dry-run` stops after the plan).
+
+## Recovery bin
+
+`recovery::RecoveryStore` keeps an index (`recovery\index.json` in the data
+folder) of batches and their files. On the data folder's drive the bin is
+`recovery\bin` in the data folder; on other drives it is
+`X:\.winfastcleaner-recovery\<user>`, a folder with private permissions
+(`winsec.rs`). Index changes are serialized within the process and locked
+against other processes, and a batch is written before any file moves, so a
+crash can't leave the index wrong. Restore, delete, empty, and eviction all
+act through the same link-safe file operations.
+
 ## Elevation
 
-The app runs unelevated by default. The only Phase 1 feature that needs
-admin rights is the fast MFT scan. The Disk tab says so and offers
-**Restart as administrator**, which relaunches the app through UAC (one
-prompt for the session, as the spec allows). Without admin, the walker is
-used, so nothing breaks.
+The app runs unelevated by default. Admin rights are needed for the fast
+MFT scan, for rules marked `requires_admin`, and for Deep clean. The Disk
+and Cleaner tabs say so and offer **Restart as administrator**, which
+relaunches the app through UAC (one prompt for the session, as the spec
+allows). Without admin, the walker is used and admin-only rules are skipped
+with the reason, so nothing breaks.
 
 ## Snapshots
 
@@ -129,16 +174,18 @@ never links. Phase 3's "What grew" view compares two snapshots.
 
 - **Commands:** `app/src-tauri/build.rs` declares the app's commands in a
   manifest, and `capabilities/main.json` grants exactly those, plus the
-  native folder picker (`dialog:allow-open`). There are no shell, fs, http,
+  native file and folder picker (`dialog:allow-open`). There are no shell, fs, http,
   or opener permissions. (The dialog plugin depends on the fs plugin, but
   none of its permissions are granted.)
 - **CSP:** `default-src 'self'`, with no inline scripts or styles, no remote
   origins, and `object-src`, `frame-src`, `worker-src`, `base-uri`, and
   `form-action` set to none. Prototypes are frozen.
-- **No raw paths for actions:** the UI refers to items by `(scanId, nodeId)`.
-  The backend resolves paths from its own tree. The only path the UI sends
-  is the folder to scan, which is validated (absolute, no device paths, no
-  NUL, length-limited).
+- **No raw paths for actions:** the UI refers to Disk view items by
+  `(scanId, nodeId)` and to cleaner files by their index in the backend's
+  junk scan. The backend resolves paths from its own data. The only paths
+  the UI sends are the folder to scan, which is validated (absolute, no
+  device paths, no NUL, length-limited), and exclusions, which can only
+  protect files and are validated too.
 - **No network:** `deny.toml` bans HTTP and TLS client crates.
 - WebView2 keeps its own browser data folder
   (`%LOCALAPPDATA%\io.github.winfastcleaner\`). The app loads no remote
@@ -149,8 +196,10 @@ never links. Phase 3's "What grew" view compares two snapshots.
 | What | Where | Runs on |
 |---|---|---|
 | Unit tests (tree, walker, MFT parsing, snapshots, formatting) | `crates/*/src` | Windows + Linux CI |
+| Safety guard, rules, globs, settings, link-safe file operations | `crates/core/src/{safety,rules,glob,settings,fsops}.rs` | Windows + Linux CI |
+| Cleaning and recovery in temp folders: protected paths, links and junctions, exclusions, locked files, running apps, crash recovery of the index, restore conflicts, eviction | `crates/core/src/{cleaner,recovery}.rs` | Windows + Linux CI |
 | MFT reader vs. walker on a real NTFS image (hard links, attribute lists, sparse files, ADS, junctions, symlinks, Unicode) | `crates/core/tests/ntfs_image.rs` + `scripts/ntfs-test-image.sh` | Linux CI |
 | MFT scan vs. walker on a real Windows folder, plus a full system-drive MFT scan | `crates/core/tests/windows_volume.rs` | Windows CI (elevated) |
-| CLI end-to-end | `crates/cli/tests/cli.rs` | Windows + Linux CI |
-| Frontend formatting and treemap layout | `app/src/lib/*.test.ts` | Windows CI |
+| CLI end-to-end, including dry run, clean, and restore in temp folders | `crates/cli/tests/cli.rs` | Windows + Linux CI |
+| Frontend formatting, treemap layout, cleaner selection logic | `app/src/lib/*.test.ts` | Windows CI |
 | UI in a browser with fake data | `npm run dev:mock` | Local |

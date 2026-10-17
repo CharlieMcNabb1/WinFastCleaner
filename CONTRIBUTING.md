@@ -74,16 +74,21 @@ git config core.hooksPath .githooks
 
 ## Adding a cleaning rule
 
-The rule file format arrives in **Phase 2** and will be documented in
-`docs/rule-format.md`. Once that lands, adding support for a new app won't
-need any Rust code:
+Adding support for a new app needs no Rust code. The format is documented in
+[docs/rule-format.md](docs/rule-format.md).
 
-1. Create `rules/<app-or-area>.toml` following the documented format.
+1. Add the rule to the matching file in `rules/` (or create
+   `rules/<app-or-area>.toml` and add it to `BUILTIN_FILES` in
+   `crates/core/src/rules.rs`).
 2. Pick the safety tier honestly. Green means it regenerates automatically
    and the user loses nothing. When in doubt, use yellow.
-3. Write the `description` and "what you lose" text in plain language.
-4. Run the rule validator (`wfc rules validate`, Phase 2) and the tests.
-5. Open a PR that explains where the files come from and why the tier is
+3. Write the `description` and `lose` ("what you lose") text in plain
+   language.
+4. Add the rule to the **Built-in rules** table in `README.md` (a test checks
+   that every rule is listed).
+5. Check it: `wfc rules check rules/<file>.toml`, `cargo test -p cleaner-core`,
+   and on a real machine `wfc clean --rule <id> --dry-run --list`.
+6. Open a PR that explains where the files come from and why the tier is
    right.
 
 Rule files are data only. They can never run commands or target protected
@@ -94,6 +99,7 @@ paths, and the loader rejects any that try.
 - [ ] `cargo fmt`, `cargo clippy -D warnings`, and `cargo test` pass.
 - [ ] Frontend `npm run check` and `npm test` pass (if you touched `app/`).
 - [ ] New deletion or recovery code has tests that run in temp directories,
-      including protected-path, link, and exclusion cases.
+      including protected-path, link, and exclusion cases. CLI tests that
+      clean pass `--rules-dir` with test rules, so built-in rules never run.
 - [ ] No real user data, secrets, or copied third-party rules.
 - [ ] Docs updated if behavior changed.
