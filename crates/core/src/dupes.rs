@@ -384,7 +384,7 @@ mod tests {
         let p = root.join(rel);
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(&p, body).unwrap();
-        std::fs::canonicalize(p).unwrap()
+        crate::platform::simplify_path(std::fs::canonicalize(p).unwrap())
     }
 
     fn pattern(len: usize, seed: u8) -> Vec<u8> {

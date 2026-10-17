@@ -180,7 +180,7 @@ mod tests {
         let t = std::time::SystemTime::now() - std::time::Duration::from_secs(days_old * 86_400);
         f.set_times(std::fs::FileTimes::new().set_modified(t).set_accessed(t))
             .unwrap();
-        std::fs::canonicalize(p).unwrap()
+        crate::platform::simplify_path(std::fs::canonicalize(p).unwrap())
     }
 
     #[test]

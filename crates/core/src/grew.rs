@@ -149,6 +149,10 @@ fn join(root: &str, rel: &str, sep: char) -> String {
 /// separator, trailing separator ignored).
 pub fn same_root(a: &str, b: &str) -> bool {
     let norm = |s: &str| {
+        let s = s
+            .strip_prefix(r"\\?\")
+            .or_else(|| s.strip_prefix("//?/"))
+            .unwrap_or(s);
         s.trim_end_matches(['\\', '/'])
             .replace('/', "\\")
             .to_lowercase()
@@ -246,6 +250,7 @@ mod tests {
     fn roots_compare_loosely() {
         assert!(same_root(r"C:\", "c:"));
         assert!(same_root(r"D:\Projects\", "d:/projects"));
+        assert!(same_root(r"\\?\C:\Users\a", r"c:\users\A\"));
         assert!(!same_root(r"C:\", r"D:\"));
     }
 }
