@@ -1,0 +1,40 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/cli", "app/src-tauri"]
+# `cargo test` at the root covers the platform-independent crates. CI always
+# passes `--workspace` so the desktop app is built and tested too.
+default-members = ["crates/core", "crates/cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+repository = "https://github.com/CharlieMcNabb1/WinFastCleaner"
+publish = false
+
+[workspace.dependencies]
+cleaner-core = { path = "crates/core" }
+clap = { version = "4.6", features = ["derive"] }
+libc = "0.2"
+rayon = "1.12"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.27"
+thiserror = "2.0"
+windows-sys = "0.61"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+# Every unsafe block must say why it is sound.
+undocumented_unsafe_blocks = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"

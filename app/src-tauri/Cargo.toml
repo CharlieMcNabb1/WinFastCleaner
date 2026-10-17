@@ -1,0 +1,36 @@
+[package]
+name = "cleaner-app"
+description = "WinFastCleaner desktop app (Tauri backend)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "winfastcleaner"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.7.1", features = [] }
+
+[dependencies]
+cleaner-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2.12.1", features = [] }
+tauri-plugin-dialog = "2.8.0"
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[lints]
+workspace = true
