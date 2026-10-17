@@ -136,7 +136,7 @@ pub(crate) fn read_tree_with<R: Read + Seek + Send>(
             let parsed: Vec<Option<Parsed>> = buf[..count * rec_size]
                 .par_chunks_mut(rec_size)
                 .enumerate()
-                .map(|(i, rec)| parse_record(rec, first + i as u64))
+                .map(|(i, rec)| parse_record(rec, first + i as u64, cluster as u64))
                 .collect();
             for p in parsed {
                 state.merge(p, counters);
@@ -372,7 +372,7 @@ struct ParsedName {
     name: Vec<u16>,
 }
 
-fn parse_record(rec: &mut [u8], number: u64) -> Option<Parsed> {
+fn parse_record(rec: &mut [u8], number: u64, cluster: u64) -> Option<Parsed> {
     if rec.get(0..4)? != b"FILE" {
         return None;
     }
@@ -429,13 +429,15 @@ fn parse_record(rec: &mut [u8], number: u64) -> Option<Parsed> {
                         p.size = Some(v.len() as u64);
                     }
                 } else if let Some(nr) = attr.non_resident() {
-                    // Sizes are only valid in the first extent.
-                    if nr.lowest_vcn == 0 {
-                        if attr.name_len == 0 {
-                            p.size = Some(nr.data_size);
-                        }
-                        p.allocated += nr.compressed_size.unwrap_or(nr.allocated);
+                    // The logical size is only valid in the first extent.
+                    if nr.lowest_vcn == 0 && attr.name_len == 0 {
+                        p.size = Some(nr.data_size);
                     }
+                    // Size on disk comes from the clusters each extent really
+                    // uses, not from header fields: some attributes (such as
+                    // $BadClus:$Bad) claim far more than they allocate.
+                    let clusters = runs::allocated_clusters(nr.runs).unwrap_or(0);
+                    p.allocated = p.allocated.saturating_add(clusters.saturating_mul(cluster));
                 }
             }
             ATTR_REPARSE_POINT => {
@@ -684,7 +686,7 @@ mod tests {
                 &[0x11, 0x03, 0x20, 0x00],
             )
             .build();
-        let p = parse_record(&mut r, 77).unwrap();
+        let p = parse_record(&mut r, 77, 4096).unwrap();
         assert_eq!(p.base, 77);
         assert_eq!(p.names.len(), 1);
         assert_eq!(
@@ -698,24 +700,47 @@ mod tests {
     }
 
     #[test]
+    fn size_on_disk_comes_from_real_clusters_not_headers() {
+        // Like $BadClus:$Bad: the header claims the whole volume, but every
+        // run is sparse and nothing is allocated.
+        let bad: Vec<u16> = "$Bad".encode_utf16().collect();
+        let mut r = RecordBuilder::new(RECORD_IN_USE)
+            .file_name(5, 5, 3, "$BadClus")
+            .non_resident(
+                ATTR_DATA,
+                &bad,
+                0,
+                0,
+                1 << 40,
+                1 << 40,
+                None,
+                &[0x04, 0x00, 0x00, 0x00, 0x01, 0x00],
+            )
+            .build();
+        let p = parse_record(&mut r, 8, 4096).unwrap();
+        assert_eq!(p.allocated, 0);
+        assert_eq!(p.size, None);
+    }
+
+    #[test]
     fn extension_records_contribute_to_their_base() {
         let mut ext = RecordBuilder::new(RECORD_IN_USE)
             .base(77 | (3 << 48))
             .file_name(41, 1, 0, "second-link")
             .build();
-        let p = parse_record(&mut ext, 900).unwrap();
+        let p = parse_record(&mut ext, 900, 4096).unwrap();
         assert_eq!((p.record, p.base), (900, 77));
     }
 
     #[test]
     fn unused_and_torn_records() {
         let mut unused = RecordBuilder::new(0).file_name(5, 5, 1, "gone").build();
-        assert!(parse_record(&mut unused, 30).is_none());
+        assert!(parse_record(&mut unused, 30, 4096).is_none());
         let mut torn = RecordBuilder::new(RECORD_IN_USE)
             .file_name(5, 5, 1, "x")
             .build();
         torn[510] ^= 0xFF;
-        assert_eq!(parse_record(&mut torn, 31).unwrap().base, u64::MAX);
+        assert_eq!(parse_record(&mut torn, 31, 4096).unwrap().base, u64::MAX);
     }
 
     #[test]
@@ -724,7 +749,7 @@ mod tests {
         let mut st = MergeState::new(64);
         let mut push = |rec: u64, r: RecordBuilder| {
             let mut bytes = r.build();
-            st.merge(parse_record(&mut bytes, rec), &counters);
+            st.merge(parse_record(&mut bytes, rec, 4096), &counters);
         };
         push(
             5,
