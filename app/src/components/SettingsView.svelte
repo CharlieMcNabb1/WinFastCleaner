@@ -146,6 +146,22 @@
       </label>
     </section>
 
+    <section class="card" aria-labelledby="set-secure">
+      <h2 id="set-secure">Secure delete</h2>
+      <label class="check">
+        <input type="checkbox" checked={s.secureDelete} onchange={(e) => update((x) => (x.secureDelete = e.currentTarget.checked))} />
+        <span>
+          Offer secure delete
+          <span class="muted hint">
+            When it's offered, the Cleaner and the Recover tab let you overwrite files before deleting them, so they can't be
+            recovered. It is slower, skips the recovery bin (nothing can be restored), and is less effective on SSDs, which
+            may keep old copies of data elsewhere. Files you pick yourself always go to the recovery bin first; delete them
+            securely from the Recover tab.
+          </span>
+        </span>
+      </label>
+    </section>
+
     <section class="card" aria-labelledby="set-bin">
       <h2 id="set-bin">Recovery bin</h2>
       <p class="muted hint">

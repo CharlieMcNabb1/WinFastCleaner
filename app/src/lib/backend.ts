@@ -24,6 +24,9 @@ import type {
   Settings,
   SettingsView,
   SnapshotView,
+  Trace,
+  TraceInfo,
+  TraceResult,
   TreemapNode,
 } from "./types.ts";
 
@@ -50,7 +53,8 @@ export interface Backend {
   cleanPreview(scanId: number, selection: RuleSelection[]): Promise<PlanView>;
   /** Plans items picked in the Disk view (always red tier, always to the bin). */
   cleanManual(scanId: number, nodeIds: number[]): Promise<ManualPlanView>;
-  cleanExecute(planId: number, onEvent: (e: CleanEvent) => void): Promise<void>;
+  /** `secure` overwrites green and yellow files first (only when offered in Settings). */
+  cleanExecute(planId: number, secure: boolean, onEvent: (e: CleanEvent) => void): Promise<void>;
   cancelClean(): Promise<void>;
   deepClean(onEvent: (e: DeepCleanEvent) => void): Promise<void>;
 
@@ -59,8 +63,8 @@ export interface Backend {
   recoveryBatch(batchId: string): Promise<Batch>;
   recoveryConflicts(batchId: string, itemIds: number[] | null): Promise<string[]>;
   recoveryRestore(batchId: string, itemIds: number[] | null, conflict: Conflict): Promise<RestoreReport>;
-  recoveryDelete(batchId: string): Promise<PurgeReport>;
-  recoveryEmpty(): Promise<PurgeReport>;
+  recoveryDelete(batchId: string, secure: boolean): Promise<PurgeReport>;
+  recoveryEmpty(secure: boolean): Promise<PurgeReport>;
 
   // Settings
   getSettings(): Promise<SettingsView>;
@@ -81,6 +85,10 @@ export interface Backend {
   compareSnapshots(older: string, newer: string): Promise<ComparisonView>;
   /** Finds a path in a Disk scan; null when it isn't in that scan. */
   locateNode(scanId: number, path: string): Promise<number | null>;
+
+  // Privacy (Windows traces)
+  privacySurvey(): Promise<TraceInfo[]>;
+  privacyClear(traces: Trace[]): Promise<TraceResult[]>;
 }
 
 let instance: Promise<Backend> | null = null;

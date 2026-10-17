@@ -215,6 +215,8 @@ export interface PurgeReport {
 export interface CleanReport {
   deletedCount: number;
   deletedBytes: number;
+  /** Of the deleted files, how many were overwritten first. */
+  wipedCount: number;
   binnedCount: number;
   binnedBytes: number;
   skippedCount: number;
@@ -307,6 +309,8 @@ export interface Settings {
   bin: BinLimits;
   /** Keep scan snapshots ("What grew") this many days. */
   snapshotDays: number;
+  /** Offer secure delete (overwrite before deleting). */
+  secureDelete: boolean;
 }
 
 export interface SettingsView {
@@ -413,4 +417,25 @@ export interface ComparisonView {
   threshold: number;
   grew: ChangeView[];
   shrank: ChangeView[];
+}
+
+// ----------------------------------------------------------------- privacy
+// (see app/src-tauri/src/privacy_cmds.rs)
+
+export type Trace = "recentDocuments" | "jumpLists" | "runHistory" | "clipboard";
+
+export interface TraceInfo {
+  trace: Trace;
+  name: string;
+  description: string;
+  lose: string;
+  items: number | null;
+  available: boolean;
+}
+
+export interface TraceResult {
+  trace: Trace;
+  cleared: number;
+  skipped: { path: string; reason: string }[];
+  error: string | null;
 }

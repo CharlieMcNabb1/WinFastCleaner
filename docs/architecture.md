@@ -27,6 +27,7 @@
 │  finder.rs    large and old files (from a scan tree)                   │
 │  dupes.rs     duplicates: size → partial BLAKE3 → full BLAKE3          │
 │  grew.rs      "What grew": compares two snapshots                      │
+│  privacy.rs   Windows traces: recent docs, jump lists, Run, clipboard  │
 │  log.rs       local cleanup log (JSON lines, rotated)                  │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -153,6 +154,19 @@ folder) of batches and their files. On the data folder's drive the bin is
 against other processes, and a batch is written before any file moves, so a
 crash can't leave the index wrong. Restore, delete, empty, and eviction all
 act through the same link-safe file operations.
+
+## Privacy and secure delete
+
+`privacy::survey` counts each trace and `privacy::clear` removes the chosen
+ones (see the [safety model](safety-model.md#privacy-cleaning)). Locations
+are a parameter (`privacy::Locations`), so tests point them at temp folders
+and a throwaway registry key and never touch the real lists.
+
+Secure delete is `fsops::open_for_wipe` + `Opened::wipe` (write zeros over
+the file's length through the handle, flush) + delete through the same
+handle. `cleaner::execute` uses it for green and yellow items when
+`ExecOptions::secure` is set; red items still go to the bin.
+`RecoveryStore::delete_batch` and `empty` take a `secure` flag.
 
 ## File finders and "What grew"
 

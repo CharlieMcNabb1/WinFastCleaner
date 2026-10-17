@@ -4,8 +4,9 @@ A fast, safe, transparent disk cleaner and system health tool for Windows 10
 and 11 (x64). WinFastCleaner is an open-source alternative to CCleaner. It is
 not affiliated with or endorsed by CCleaner or Piriform/Gen Digital.
 
-> **Status: early development (Phase 3 of 6).** The disk scanner, Disk view,
-> cleaner, recovery bin, file finders, and "What grew" work today. It has not been tested widely on real
+> **Status: early development (Phase 4 of 6).** The disk scanner, Disk view,
+> cleaner, recovery bin, file finders, "What grew", Windows privacy cleaning,
+> and secure delete work today. It has not been tested widely on real
 > PCs yet, so preview what it will clean and keep the recovery bin on. See
 > [Roadmap](#roadmap).
 
@@ -59,7 +60,9 @@ It never follows symlinks, junctions, or mount points while deleting. Each
 file is checked again right before it is removed, and anything that changed
 since the preview, is in use, or is denied is skipped and reported. Your
 **exclusions list always wins** over every rule and selection. It never
-touches the registry and never changes system settings.
+"cleans" or "optimizes" the registry and never changes system settings. The
+only registry data it ever removes is your own Run dialog history, and only
+when you clear it in the Privacy tab.
 
 ### Built-in rules
 
@@ -143,8 +146,8 @@ Settings if you prefer.
 - Settings, scan snapshots, and logs stay on your machine in
   `%LOCALAPPDATA%\WinFastCleaner\`. Logs contain paths and sizes only, and
   are rotated.
-- Privacy cleaning (Phase 4) only deletes browser files. It never reads,
-  decrypts, exports, or logs their contents.
+- Privacy cleaning only counts and removes traces. It never reads, exports,
+  or logs their contents (see [Privacy tab](#privacy-tab)).
 
 ## Roadmap
 
@@ -153,7 +156,7 @@ Settings if you prefer.
 | 1 | Workspace, scanner (parallel walk and NTFS MFT), Disk tab with tree and treemap, scan snapshots | **Built** |
 | 2 | Rule files, built-in rules, tiered Cleaner tab, parallel deletion, recovery bin, exclusions, safety rules, `--dry-run` | **Built** |
 | 3 | Large/old file finder, duplicate finder, "What grew" | **Built** |
-| 4 | Privacy cleaning, secure delete | Planned |
+| 4 | Privacy cleaning, secure delete | **Built** (Windows traces; browser history and cookies deferred) |
 | 5 | Startup manager, winget updater, health check, Home dashboard | Planned |
 | 6 | Scheduled cleaning, tray monitor, settings, installer, docs | Planned |
 
@@ -192,11 +195,13 @@ described below.
   that grew or shrank the most, such as "Discord cache +3.1 GB since Oct 9".
   Each entry opens in the Disk view, and in the Cleaner when a rule covers
   it.
+- **Privacy** clears Windows traces, each on its own and none ticked by
+  default (see [Privacy tab](#privacy-tab)).
 - **Recover** lists recovery bin batches, newest first, with bin usage per
   drive. Restore a whole batch or chosen files, delete a batch, or empty the
   bin.
-- **Settings**: send safe items to the bin too, recovery bin limits, how
-  long to keep scan snapshots, your exclusions (folders, files, and patterns
+- **Settings**: send safe items to the bin too, secure delete, recovery bin
+  limits, how long to keep scan snapshots, your exclusions (folders, files, and patterns
   such as `*.psd`), and your custom rules folder.
 
 When the app isn't running as administrator, it says so and offers **Restart
@@ -240,6 +245,32 @@ to ask on. Run from an elevated (administrator) terminal to use the fast MFT
 scan and to clean the admin-only items. Each scan saves a small snapshot of
 folder sizes (used by "What grew" in Phase 3); pass `--no-snapshot` to skip
 it.
+
+### Privacy tab
+
+Privacy cleaning is separate from freeing space. Each item is cleared on its
+own, nothing is ticked by default, and contents are never read:
+
+| Item | What is removed | What you lose |
+|---|---|---|
+| Recent documents | Windows' recent files list (cleared with Windows' own "clear recent documents" call), and shortcuts left in the Recent folder | The recent files lists. The files themselves are not touched. |
+| Jump lists | The jump list files in the Recent folder | Recent and pinned items in taskbar and Start jump lists |
+| Run history | The values of your own `RunMRU` registry key | The Run dialog's suggestions |
+| Clipboard | What is copied right now | What you copied (clipboard history, Windows key + V, is kept) |
+
+Browser history, cookies, saved form data, and sessions aren't included yet.
+Browser **caches** are cleaned in the Cleaner tab.
+
+### Secure delete
+
+Off by default. Turn on **Offer secure delete** in Settings, and the Cleaner
+and the Recover tab let you overwrite files with zeros before deleting them,
+so they can't be recovered by undelete tools. It is slower, skips the
+recovery bin (nothing can be restored), and is **less effective on SSDs**,
+whose wear leveling may keep old copies of the data elsewhere. Files you pick
+yourself (red tier) always go to the recovery bin first; delete them
+securely from the Recover tab. On the command line: `wfc clean --secure`,
+`wfc recover delete <BATCH> --secure`, `wfc recover empty --secure`.
 
 ### Your own cleaning rules
 

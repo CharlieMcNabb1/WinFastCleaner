@@ -40,6 +40,9 @@
   const deselected: Deselected = new SvelteMap();
 
   let plan = $state<PlanView | null>(null);
+  /** Secure delete is offered (Settings) and chosen for this clean. */
+  let secureOffered = $state(false);
+  let secure = $state(false);
   let preparing = $state(false);
   let cleaning = $state<{ done: number; total: number } | null>(null);
   let result = $state<CleanReport | null>(null);
@@ -136,7 +139,10 @@
       const selection = junk.rules
         .filter((r) => selected.has(r.id) && isReady(r))
         .map((r) => ({ ruleId: r.id, deselected: [...(deselected.get(r.id)?.keys() ?? [])] }));
-      plan = await api.cleanPreview(junk.scanId, selection);
+      const [preview, settings] = await Promise.all([api.cleanPreview(junk.scanId, selection), api.getSettings()]);
+      secureOffered = settings.settings.secureDelete;
+      secure = false;
+      plan = preview;
     } catch (e) {
       error = errorMessage(e);
     } finally {
@@ -151,7 +157,7 @@
     result = null;
     cleaning = { done: 0, total: 0 };
     try {
-      await api.cleanExecute(planId, (e) => {
+      await api.cleanExecute(planId, secure, (e) => {
         switch (e.type) {
           case "progress":
             cleaning = { done: e.done, total: e.total };
@@ -405,17 +411,24 @@
   {#if plan}
     <p>The exact list was just built from your selection. Only these files are touched.</p>
     <ul class="plan">
-      {#if plan.deleteCount > 0}
+      {#if secure}
         <li>
-          <strong>{sizeAndCount(plan.deleteBytes, plan.deleteCount)}</strong> deleted now. These are safe items that
-          rebuild on their own.
+          <strong>{sizeAndCount(plan.totalSize, plan.count)}</strong> overwritten, then deleted. Nothing goes to the recovery
+          bin, so these can't be restored.
         </li>
-      {/if}
-      {#if plan.binCount > 0}
-        <li>
-          <strong>{sizeAndCount(plan.binBytes, plan.binCount)}</strong> moved to the recovery bin, where you can restore them.
-          Their space is freed when the bin is emptied or the batch expires.
-        </li>
+      {:else}
+        {#if plan.deleteCount > 0}
+          <li>
+            <strong>{sizeAndCount(plan.deleteBytes, plan.deleteCount)}</strong> deleted now. These are safe items that
+            rebuild on their own.
+          </li>
+        {/if}
+        {#if plan.binCount > 0}
+          <li>
+            <strong>{sizeAndCount(plan.binBytes, plan.binCount)}</strong> moved to the recovery bin, where you can restore them.
+            Their space is freed when the bin is emptied or the batch expires.
+          </li>
+        {/if}
       {/if}
     </ul>
     {#if plan.notReady.length > 0}
@@ -424,6 +437,15 @@
         {#each plan.notReady as n, i (n.ruleId)}{i > 0 ? "; " : ""}{junk?.rules.find((r) => r.id === n.ruleId)?.name ??
             n.ruleId} ({statusText(n.status).toLowerCase()}){/each}.
       </p>
+    {/if}
+    {#if secureOffered}
+      <label class="secure">
+        <input type="checkbox" bind:checked={secure} />
+        <span>
+          <strong>Secure delete:</strong> overwrite these files before deleting them, so they can't be recovered. Slower;
+          nothing goes to the recovery bin, so they can't be restored; less effective on SSDs.
+        </span>
+      </label>
     {/if}
     <p class="muted small">Files that are in use or changed since the scan are skipped and listed afterwards.</p>
   {/if}
@@ -557,5 +579,14 @@
   }
   .plan li {
     margin: 4px 0;
+  }
+  .secure {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 8px 10px;
+    border: 1px solid var(--alert-border);
+    border-radius: var(--radius);
+    background: var(--alert-bg);
   }
 </style>

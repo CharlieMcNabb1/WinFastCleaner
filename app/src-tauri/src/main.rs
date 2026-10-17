@@ -12,6 +12,7 @@ mod cleaning;
 mod commands;
 mod files;
 mod grew_cmds;
+mod privacy_cmds;
 mod recover;
 mod settings_cmds;
 mod state;
@@ -56,6 +57,8 @@ fn main() {
             files::dupes_plan,
             grew_cmds::list_snapshots,
             grew_cmds::compare_snapshots,
+            privacy_cmds::privacy_survey,
+            privacy_cmds::privacy_clear,
         ])
         .run(tauri::generate_context!())
         .expect("error while running WinFastCleaner");

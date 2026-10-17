@@ -452,8 +452,12 @@ pub fn clean_execute(
     app: AppHandle,
     state: State<'_, AppState>,
     plan_id: u64,
+    secure: bool,
     on_event: Channel<CleanEvent>,
 ) -> CmdResult<()> {
+    if secure && !Settings::load(&data_dir()?).secure_delete {
+        return Err("Secure delete is turned off in Settings.".into());
+    }
     let (previewed, cancel) = {
         let mut s = state.lock();
         if s.cleaning.is_some() {
@@ -482,6 +486,8 @@ pub fn clean_execute(
                 let opts = ExecOptions {
                     green_to_bin: previewed.green_to_bin,
                     label: previewed.label.to_string(),
+                    // Red items still go to the bin (enforced in core).
+                    secure,
                 };
                 let progress = |done: u64, total: u64| {
                     let _ = on_event.send(CleanEvent::Progress { done, total });

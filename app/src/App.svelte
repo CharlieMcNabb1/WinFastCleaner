@@ -6,15 +6,17 @@
   import FilesView from "./components/FilesView.svelte";
   import GrewView from "./components/GrewView.svelte";
   import Icon, { type IconName } from "./components/Icon.svelte";
+  import PrivacyView from "./components/PrivacyView.svelte";
   import RecoverView from "./components/RecoverView.svelte";
   import SettingsView from "./components/SettingsView.svelte";
   import { backend } from "./lib/backend.ts";
   import type { AppInfo } from "./lib/types.ts";
 
-  type Tab = "disk" | "cleaner" | "files" | "grew" | "recover" | "settings";
+  type Tab = "disk" | "cleaner" | "privacy" | "files" | "grew" | "recover" | "settings";
   const TABS: { id: Tab; label: string; icon: IconName }[] = [
     { id: "disk", label: "Disk", icon: "drive" },
     { id: "cleaner", label: "Cleaner", icon: "sparkle" },
+    { id: "privacy", label: "Privacy", icon: "shield" },
     { id: "files", label: "Files", icon: "file" },
     { id: "grew", label: "What grew", icon: "trend" },
     { id: "recover", label: "Recover", icon: "restore" },
@@ -89,6 +91,9 @@
       <div class="pane" hidden={tab !== "cleaner"}>
         <CleanerView {info} active={tab === "cleaner"} focus={cleanerFocus} onNavigate={go} />
       </div>
+    {/if}
+    {#if opened.has("privacy")}
+      <div class="pane" hidden={tab !== "privacy"}><PrivacyView active={tab === "privacy"} /></div>
     {/if}
     {#if opened.has("files")}
       <div class="pane" hidden={tab !== "files"}><FilesView active={tab === "files"} onNavigate={go} /></div>

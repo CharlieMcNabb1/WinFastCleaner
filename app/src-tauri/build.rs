@@ -39,6 +39,8 @@ fn main() {
             "dupes_plan",
             "list_snapshots",
             "compare_snapshots",
+            "privacy_survey",
+            "privacy_clear",
         ]),
     ))
     .expect("failed to run tauri-build");

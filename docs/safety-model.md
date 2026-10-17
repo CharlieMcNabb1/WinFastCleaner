@@ -102,6 +102,33 @@ group, or whose kept copy no longer exists; the UI also never lets the last
 copy be picked. Hashing opens files read-only without following links, and
 skips cloud placeholders so it never downloads them.
 
+## Privacy cleaning
+
+The Privacy tab clears Windows traces (recent documents, jump lists, Run
+history, clipboard). Each is cleared only when the user ticks it; none is
+ticked by default. Contents are never read: items are only counted, and the
+log records file paths and sizes, or for the Run history and clipboard just
+"cleared N entries" / "emptied". Recent-document shortcuts and jump list files
+are deleted through the same link-safe handles and guard as everything else.
+The only registry data touched is the values of the user's own
+`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU`.
+
+## Secure delete
+
+Secure delete (off by default, offered only when turned on in Settings)
+overwrites a file with zeros through the same link-safe handle, flushes it to
+disk, and then deletes it. It is only offered where it can't conflict with
+the rules above:
+
+- for rule-based (green and yellow) cleaning, where those files skip the
+  recovery bin;
+- for deleting batches from the recovery bin.
+
+**Red items always go to the recovery bin first** (rule 4), even when secure
+delete is chosen; the core enforces this, not just the UI. On SSDs, wear
+leveling may keep old copies of the data, so the UI says it is less
+effective there.
+
 ## Recovery bin
 
 Yellow and red items (and green ones if the user asks) are **moved**, never

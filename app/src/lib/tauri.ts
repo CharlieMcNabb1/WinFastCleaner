@@ -46,7 +46,8 @@ export function createTauriBackend(): Backend {
     junkItems: (scanId, ruleId, offset, limit) => invoke("junk_items", { scanId, ruleId, offset, limit }),
     cleanPreview: (scanId, selection) => invoke("clean_preview", { scanId, selection }),
     cleanManual: (scanId, nodeIds) => invoke("clean_manual", { scanId, nodeIds }),
-    cleanExecute: (planId, onEvent) => invoke("clean_execute", { planId, onEvent: channel<CleanEvent>(onEvent) }),
+    cleanExecute: (planId, secure, onEvent) =>
+      invoke("clean_execute", { planId, secure, onEvent: channel<CleanEvent>(onEvent) }),
     cancelClean: () => invoke("cancel_clean"),
     deepClean: (onEvent) => invoke("deep_clean", { onEvent: channel<DeepCleanEvent>(onEvent) }),
 
@@ -54,8 +55,8 @@ export function createTauriBackend(): Backend {
     recoveryBatch: (batchId) => invoke("recovery_batch", { batchId }),
     recoveryConflicts: (batchId, itemIds) => invoke("recovery_conflicts", { batchId, itemIds }),
     recoveryRestore: (batchId, itemIds, conflict) => invoke("recovery_restore", { batchId, itemIds, conflict }),
-    recoveryDelete: (batchId) => invoke("recovery_delete", { batchId }),
-    recoveryEmpty: () => invoke("recovery_empty"),
+    recoveryDelete: (batchId, secure) => invoke("recovery_delete", { batchId, secure }),
+    recoveryEmpty: (secure) => invoke("recovery_empty", { secure }),
 
     getSettings: () => invoke("get_settings"),
     saveSettings: (settings) => invoke("save_settings", { settings }),
@@ -73,5 +74,8 @@ export function createTauriBackend(): Backend {
     listSnapshots: () => invoke("list_snapshots"),
     compareSnapshots: (older, newer) => invoke("compare_snapshots", { older, newer }),
     locateNode: (scanId, path) => invoke("locate_node", { scanId, path }),
+
+    privacySurvey: () => invoke("privacy_survey"),
+    privacyClear: (traces) => invoke("privacy_clear", { traces }),
   };
 }

@@ -21,6 +21,7 @@ import type {
   ScanSummary,
   SettingsView,
   Tier,
+  TraceInfo,
   TreemapNode,
 } from "./types.ts";
 import { Flags } from "./types.ts";
@@ -328,6 +329,7 @@ export function createMockBackend(): Backend {
       greenToBin: false,
       bin: { maxBytes: 5 * GB, maxPercent: 10, maxBatches: 5, maxAgeDays: 14 },
       snapshotDays: 90,
+      secureDelete: false,
     },
     dataDir: "C:\\Users\\test-user\\AppData\\Local\\WinFastCleaner",
     rulesDir: "C:\\Users\\test-user\\AppData\\Local\\WinFastCleaner\\rules",
@@ -346,6 +348,12 @@ export function createMockBackend(): Backend {
       .sort((a, b) => b.createdAt - a.createdAt);
   const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
   let findId = 5000;
+  const traces: TraceInfo[] = [
+    { trace: "recentDocuments", name: "Recent documents", description: "The list of files you opened recently, shown in File Explorer's Quick access and Start.", lose: "The recent files lists. The files themselves are not touched.", items: 148, available: true },
+    { trace: "jumpLists", name: "Jump lists", description: "The recent and frequent items shown when you right-click an app on the taskbar or Start.", lose: "Recent items in jump lists, and items you pinned to them. The files themselves are not touched.", items: 37, available: true },
+    { trace: "runHistory", name: "Run history", description: "Commands you typed in the Run dialog (Windows key + R).", lose: "The Run dialog's suggestions.", items: 6, available: true },
+    { trace: "clipboard", name: "Clipboard", description: "What is copied right now.", lose: "What you copied. Clipboard history (Windows key + V) is kept; clear it in Windows Settings.", items: 1, available: true },
+  ];
   let found: FoundFile[] = [];
   let dupeGroups: DupeGroupView[] = [];
   const manualPlan = (picked: { path: string; size: number }[], label: string) => {
@@ -544,7 +552,7 @@ export function createMockBackend(): Backend {
         rejected,
       };
     },
-    cleanExecute: async (planId, onEvent) => {
+    cleanExecute: async (planId, secure, onEvent) => {
       if (!plan || plan.planId !== planId) throw new Error("This preview is out of date. Please review it again.");
       const p = plan;
       plan = null;
@@ -556,9 +564,11 @@ export function createMockBackend(): Backend {
         clearInterval(cleanTimer!);
         cleanTimer = null;
         const locked = Math.min(3, p.count);
+        const wiped = secure ? p.tiers.filter((t) => t !== "red").length : 0;
         const report: CleanReport = {
-          deletedCount: p.deleteCount,
+          deletedCount: p.deleteCount + (secure ? p.binCount - p.tiers.filter((t) => t === "red").length : 0),
           deletedBytes: p.deleteBytes,
+          wipedCount: wiped,
           binnedCount: p.binCount,
           binnedBytes: p.binBytes,
           skippedCount: locked,
@@ -634,13 +644,13 @@ export function createMockBackend(): Backend {
         skipped: blocked.map((i) => [i.original, "A file with that name already exists"] as [string, string]),
       };
     },
-    recoveryDelete: async (id) => {
+    recoveryDelete: async (id, _secure) => {
       const i = batches.findIndex((x) => x.id === id);
       if (i < 0) return { batches: 0, files: 0, bytes: 0, failed: 0 };
       const [b] = batches.splice(i, 1);
       return { batches: 1, files: b!.items.length, bytes: b!.items.reduce((s, x) => s + x.size, 0), failed: 0 };
     },
-    recoveryEmpty: async () => {
+    recoveryEmpty: async (_secure) => {
       const files = batches.reduce((s, b) => s + b.items.length, 0);
       const bytes = batches.reduce((s, b) => s + b.items.reduce((t, x) => t + x.size, 0), 0);
       const n = batches.length;
@@ -748,6 +758,23 @@ export function createMockBackend(): Backend {
         ],
         shrank: [{ path: `${u}Downloads`, oldSize: 6 * GB, newSize: 5 * GB, delta: -1 * GB, rule: null }],
       };
+    },
+    privacySurvey: async () => traces.map((t) => ({ ...t })),
+    privacyClear: async (chosen) => {
+      await delay(400);
+      return chosen.map((trace) => {
+        const t = traces.find((x) => x.trace === trace)!;
+        const cleared = t.items ?? 0;
+        t.items = 0;
+        return trace === "jumpLists"
+          ? {
+              trace,
+              cleared: cleared - 1,
+              skipped: [{ path: "C:\\Users\\test-user\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\AutomaticDestinations\\f01b4d95cf55d32a.automaticDestinations-ms", reason: "In use by another program" }],
+              error: null,
+            }
+          : { trace, cleared, skipped: [], error: null };
+      });
     },
     locateNode: async (_scan, path) => {
       const id = nodes.findIndex((_, i) => pathOf(i) === path);
