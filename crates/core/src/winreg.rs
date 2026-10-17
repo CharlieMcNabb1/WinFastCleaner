@@ -1,4 +1,5 @@
-//! Minimal registry access (Windows only), for the startup manager.
+//! Minimal registry access (Windows only), for the startup manager and the
+//! tray monitor's sign-in entry.
 
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
@@ -7,8 +8,8 @@ use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
 use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_BINARY, REG_EXPAND_SZ,
-    REG_OPTION_NON_VOLATILE, REG_SZ, RegCloseKey, RegCreateKeyExW, RegEnumValueW, RegOpenKeyExW,
-    RegQueryInfoKeyW, RegQueryValueExW, RegSetValueExW,
+    REG_OPTION_NON_VOLATILE, REG_SZ, RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegEnumValueW,
+    RegOpenKeyExW, RegQueryInfoKeyW, RegQueryValueExW, RegSetValueExW,
 };
 
 pub use windows_sys::Win32::System::Registry::{
@@ -210,6 +211,40 @@ impl Key {
         })
     }
 
+    /// Writes a `REG_SZ` value.
+    pub fn set_string(&self, name: &str, value: &str) -> Result<(), u32> {
+        let w = wide(name);
+        let d = wide(value);
+        // SAFETY: both strings are NUL-terminated; the data length includes
+        // the terminator, as the registry expects.
+        let err = unsafe {
+            RegSetValueExW(
+                self.0,
+                w.as_ptr(),
+                0,
+                REG_SZ,
+                d.as_ptr().cast(),
+                (d.len() * 2) as u32,
+            )
+        };
+        if err == ERROR_SUCCESS {
+            Ok(())
+        } else {
+            Err(err)
+        }
+    }
+
+    /// Deletes a value. A missing value is not an error.
+    pub fn delete_value(&self, name: &str) -> Result<(), u32> {
+        let w = wide(name);
+        // SAFETY: `w` is NUL-terminated.
+        let err = unsafe { RegDeleteValueW(self.0, w.as_ptr()) };
+        match err {
+            ERROR_SUCCESS | ERROR_FILE_NOT_FOUND => Ok(()),
+            e => Err(e),
+        }
+    }
+
     /// Writes a `REG_BINARY` value.
     pub fn set_binary(&self, name: &str, data: &[u8]) -> Result<(), u32> {
         let w = wide(name);
@@ -238,6 +273,10 @@ pub mod test_support {
     use super::*;
 
     pub fn set_string(key: &Key, name: &str, value: &str, expand: bool) {
+        if !expand {
+            key.set_string(name, value).unwrap();
+            return;
+        }
         let d = wide(value);
         // SAFETY: `d` is a NUL-terminated UTF-16 string of the size passed.
         let err = unsafe {

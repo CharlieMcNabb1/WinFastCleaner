@@ -290,6 +290,21 @@ pub fn delete_task(folder: &str, name: &str) -> Result<(), String> {
     })
 }
 
+/// Starts a task now, as Task Scheduler would.
+pub fn run_task(folder: &str, name: &str) -> Result<(), String> {
+    let (folder, name) = (folder.to_string(), name.to_string());
+    with_com(move || {
+        let service = connect()?;
+        // SAFETY: valid interfaces on this COM thread; an empty VARIANT
+        // means no parameters.
+        unsafe {
+            let f = service.GetFolder(&BSTR::from(folder)).map_err(err)?;
+            let t = f.GetTask(&BSTR::from(name)).map_err(err)?;
+            t.Run(&VARIANT::default()).map(|_| ()).map_err(err)
+        }
+    })
+}
+
 /// Whether a task exists, and whether it is enabled.
 pub fn task_state(folder: &str, name: &str) -> Result<Option<bool>, String> {
     let (folder, name) = (folder.to_string(), name.to_string());

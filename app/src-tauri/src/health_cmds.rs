@@ -2,11 +2,7 @@
 
 use serde::Serialize;
 
-use cleaner_core::health::{self, Check, Inputs, Status};
-use cleaner_core::platform;
-use cleaner_core::recovery::RecoveryStore;
-use cleaner_core::startup::{self, Locations};
-use cleaner_core::winget;
+use cleaner_core::health::{self, Check, Status};
 
 use crate::cleaning::context;
 
@@ -22,17 +18,7 @@ pub struct HealthView {
 #[tauri::command(async)]
 pub fn health_check() -> CmdResult<HealthView> {
     let (data, settings, _ctx) = context()?;
-    let startup = startup::list(&Locations::system());
-    let inputs = Inputs {
-        drives: platform::drives(),
-        junk: health::load_junk(&data),
-        startup_enabled: Some(startup.enabled_count()),
-        disks: health::read_disks(),
-        winget_installed: winget::find().is_some(),
-        updates: health::load_updates(&data),
-        bin: RecoveryStore::open(&data, settings.bin).usage().ok(),
-    };
-    let checks = health::evaluate(&inputs, &settings.health);
+    let checks = health::evaluate(&health::gather(&data, &settings), &settings.health);
     Ok(HealthView {
         overall: health::overall(&checks),
         checks,
