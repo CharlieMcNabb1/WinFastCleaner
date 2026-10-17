@@ -76,7 +76,8 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Test
-        run: cargo test --workspace --locked
+        # Report every failing test, not just the first failing binary.
+        run: cargo test --workspace --locked --no-fail-fast
 
   linux-core:
     name: Core tests incl. NTFS image (Linux)
@@ -117,7 +118,7 @@ jobs:
         env:
           WFC_NTFS_TEST_IMAGE: ${{ runner.temp }}/ntfs/test.img
           WFC_NTFS_TEST_MOUNT: ${{ runner.temp }}/ntfs/mnt
-        run: cargo test -p cleaner-core -p cleaner-cli --locked
+        run: cargo test -p cleaner-core -p cleaner-cli --locked --no-fail-fast
 
       - name: Tear down NTFS test image
         if: always()

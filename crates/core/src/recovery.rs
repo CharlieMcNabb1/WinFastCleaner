@@ -597,9 +597,11 @@ impl RecoveryStore {
                 let prepared = self.prepare_batch("Replaced while restoring", &new, now + 1)?;
                 let mut moved = Vec::new();
                 for (item, dest) in new.iter().zip(&prepared.stored) {
-                    let ok = match dest {
-                        Some(dest) => move_checked(&item.original, dest, guard, None).is_ok(),
-                        None => false,
+                    let ok = match (dest, self.bin_dir_for(&item.original)) {
+                        (Some(dest), Ok(bin)) => {
+                            move_checked(&item.original, dest, &bin, Move::IntoBin, guard).is_ok()
+                        }
+                        _ => false,
                     };
                     moved.push(ok);
                 }
@@ -637,8 +639,10 @@ impl RecoveryStore {
                 report.skipped.push((item.original.clone(), why));
                 continue;
             }
-            let bin = self.bin_dir_for(&item.stored).ok();
-            match move_checked(&item.stored, &target, guard, bin.as_deref()) {
+            let moved = self
+                .bin_dir_for(&item.stored)
+                .and_then(|bin| move_checked(&item.stored, &target, &bin, Move::OutOfBin, guard));
+            match moved {
                 Ok(()) => {
                     report.restored += 1;
                     report.restored_bytes += item.size;
@@ -673,14 +677,25 @@ impl RecoveryStore {
     }
 }
 
-/// Moves `from` to `to` through a link-safe handle. When `must_be_in` is
-/// given, the source must be inside that folder (the bin); otherwise the
-/// source must pass the guard.
+/// Which way a file moves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Move {
+    /// From anywhere into the bin: the source must pass the guard, and the
+    /// destination must be inside the bin (which the guard itself protects).
+    IntoBin,
+    /// From the bin back out: the source must be inside the bin, and the
+    /// destination must pass the guard.
+    OutOfBin,
+}
+
+/// Moves `from` to `to` through a link-safe handle. `bin` is the user's bin
+/// folder on that drive.
 fn move_checked(
     from: &Path,
     to: &Path,
+    bin: &Path,
+    way: Move,
     guard: &Guard,
-    must_be_in: Option<&Path>,
 ) -> Result<(), String> {
     let h = fsops::open(from).map_err(|e| fsops::describe_error(&e))?;
     let info = h.info().map_err(|e| fsops::describe_error(&e))?;
@@ -688,16 +703,21 @@ fn move_checked(
         return Err("Links, folders, and special files are not moved".into());
     }
     let fin = h.final_path().map_err(|e| fsops::describe_error(&e))?;
-    match must_be_in {
-        Some(bin) => {
-            let bin = std::fs::canonicalize(bin).unwrap_or_else(|_| bin.to_path_buf());
-            if !Guard::is_within(&fin, &bin) {
-                return Err("The file is no longer in the recovery bin".into());
+    match way {
+        Move::IntoBin => {
+            guard.check(&fin).map_err(|b| b.to_string())?;
+            if !Guard::is_within(to, bin) {
+                return Err("The destination is not in the recovery bin".into());
             }
         }
-        None => guard.check(&fin).map_err(|b| b.to_string())?,
+        Move::OutOfBin => {
+            let real_bin = std::fs::canonicalize(bin).unwrap_or_else(|_| bin.to_path_buf());
+            if !Guard::is_within(&fin, &real_bin) {
+                return Err("The file is no longer in the recovery bin".into());
+            }
+            guard.check(to).map_err(|b| b.to_string())?;
+        }
     }
-    guard.check(to).map_err(|b| b.to_string())?;
     h.rename_no_replace(to)
         .map_err(|e| fsops::describe_error(&e))
 }
@@ -904,8 +924,10 @@ mod tests {
 
     pub(crate) fn fixture(limits: BinLimits) -> Fixture {
         let tmp = tempfile::tempdir().unwrap();
-        let data = tmp.path().join("data");
-        let bin = tmp.path().join("bin");
+        // Long, final paths (temp folders may have 8.3 short names).
+        let base = crate::platform::simplify_path(std::fs::canonicalize(tmp.path()).unwrap());
+        let data = base.join("data");
+        let bin = base.join("bin");
         std::fs::create_dir_all(&data).unwrap();
         std::fs::create_dir_all(&bin).unwrap();
         let store = RecoveryStore::with_root(&data, &bin, limits);
@@ -920,7 +942,12 @@ mod tests {
         let p = f.tmp.path().join("files").join(name);
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(&p, body).unwrap();
-        std::fs::canonicalize(p).unwrap()
+        crate::platform::simplify_path(std::fs::canonicalize(p).unwrap())
+    }
+
+    fn move_in(f: &Fixture, from: &Path, to: &Path) -> Result<(), String> {
+        let bin = f.store.bin_dir_for(from)?;
+        move_checked(from, to, &bin, Move::IntoBin, &f.guard)
     }
 
     /// Moves files into a new batch the way the cleaner does.
@@ -938,7 +965,7 @@ mod tests {
         let moved: Vec<bool> = items
             .iter()
             .zip(&prepared.stored)
-            .map(|(i, s)| move_checked(&i.original, s.as_ref().unwrap(), &f.guard, None).is_ok())
+            .map(|(i, s)| move_in(f, &i.original, s.as_ref().unwrap()).is_ok())
             .collect();
         f.store.finish_batch(&prepared.id, &moved).unwrap();
         prepared.id
@@ -996,6 +1023,40 @@ mod tests {
             .unwrap();
         assert_eq!(r.restored, 1, "{:?}", r.skipped);
         assert_eq!(std::fs::read(&a).unwrap(), b"alpha");
+    }
+
+    /// The bin is protected by the guard (it is inside the app's data
+    /// folder, or named `.winfastcleaner-recovery`). Moving files *into* it
+    /// must still work, for cleaning and for "overwrite" restores.
+    #[test]
+    fn overwrite_works_when_the_bin_is_protected() {
+        let mut f = fixture(BinLimits::default());
+        let base = crate::platform::simplify_path(std::fs::canonicalize(f.tmp.path()).unwrap());
+        f.guard = if cfg!(windows) {
+            Guard::windows(&crate::safety::WindowsLayout {
+                system_root: base.join("Windows"),
+                program_files: vec![base.join("Program Files")],
+                program_data: base.join("ProgramData"),
+                users_dir: base.join("Users"),
+                profiles: Vec::new(),
+                app_dirs: vec![base.join("bin"), base.join("data")],
+            })
+        } else {
+            Guard::unix(&[base.join("bin"), base.join("data")])
+        };
+        let a = put(&f, "a.txt", b"old");
+        let id = bin_files(&f, std::slice::from_ref(&a), 1_000);
+        assert!(!a.exists(), "moved into the protected bin");
+        std::fs::write(&a, b"new").unwrap();
+        let r = f
+            .store
+            .restore(&id, None, Conflict::Overwrite, &f.guard)
+            .unwrap();
+        assert_eq!(r.restored, 1, "{:?}", r.skipped);
+        assert_eq!(std::fs::read(&a).unwrap(), b"old");
+        let replaced = f.store.list().unwrap();
+        assert_eq!(replaced.len(), 1, "the replaced file went to the bin");
+        assert_eq!(replaced[0].label, "Replaced while restoring");
     }
 
     #[test]
@@ -1096,7 +1157,7 @@ mod tests {
             .collect();
         let prepared = f.store.prepare_batch("Cleaner", &items, 1_000).unwrap();
         // Simulate a crash after moving only the first file.
-        move_checked(&a, prepared.stored[0].as_ref().unwrap(), &f.guard, None).unwrap();
+        move_in(&f, &a, prepared.stored[0].as_ref().unwrap()).unwrap();
         let batch = f.store.batch(&prepared.id).unwrap();
         assert_eq!(batch.items.len(), 1, "unmoved pending item dropped");
         assert_eq!(batch.items[0].state, ItemState::InBin);

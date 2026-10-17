@@ -159,12 +159,17 @@ impl Vars {
             } else {
                 std::env::var_os(name).map(PathBuf::from)
             };
+            // Expand 8.3 short names (`C:\Users\JOHNSM~1`), which the guard
+            // refuses on purpose.
             if let Some(p) = value.filter(|p| p.is_absolute()) {
-                v.0.insert((*name).to_string(), p);
+                v.0.insert((*name).to_string(), crate::platform::long_path(&p));
             }
         }
         if !v.0.contains_key("TEMP") {
-            v.0.insert("TEMP".into(), std::env::temp_dir());
+            v.0.insert(
+                "TEMP".into(),
+                crate::platform::long_path(&std::env::temp_dir()),
+            );
         }
         // The user-temp rule empties %TEMP% as a whole, so a misconfigured
         // TEMP (say, pointing at Documents) must never be trusted.
