@@ -3,7 +3,22 @@
 // is never included in production builds.
 
 import type { Backend } from "./backend.ts";
-import type { ChildrenPage, DriveInfo, NodeDetail, NodeView, ScanSummary, TreemapNode } from "./types.ts";
+import type {
+  Batch,
+  BinItem,
+  ChildrenPage,
+  CleanReport,
+  DriveInfo,
+  JunkItem,
+  NodeDetail,
+  NodeView,
+  PlanView,
+  RuleView,
+  ScanSummary,
+  SettingsView,
+  Tier,
+  TreemapNode,
+} from "./types.ts";
 import { Flags } from "./types.ts";
 
 interface MockNode extends NodeView {
@@ -40,6 +55,8 @@ function buildTree(rootName: string): MockNode[] {
       modified: 1_790_000_000 - Math.floor(rand() * 90_000_000),
       flags: flags | (isDir ? Flags.DIR : 0),
       childCount: 0,
+      protected: false,
+      excluded: false,
     });
     if (parent !== null) nodes[parent]!.kids.push(id);
     return id;
@@ -81,10 +98,24 @@ function buildTree(rootName: string): MockNode[] {
     const d = add(app, pf, true);
     files(d, 30, ["dll", "exe", "pak"], 900 * MB);
   }
-  add("System Volume Information", root, true, 0, Flags.UNREADABLE | Flags.HIDDEN | Flags.SYSTEM);
-  add("pagefile.sys", root, false, 16 * GB, Flags.HIDDEN | Flags.SYSTEM);
-  add("hiberfil.sys", root, false, 12 * GB, Flags.HIDDEN | Flags.SYSTEM);
-  add("$MFT", root, false, 1.4 * GB, Flags.METAFILE);
+  for (const id of [
+    add("System Volume Information", root, true, 0, Flags.UNREADABLE | Flags.HIDDEN | Flags.SYSTEM),
+    add("pagefile.sys", root, false, 16 * GB, Flags.HIDDEN | Flags.SYSTEM),
+    add("hiberfil.sys", root, false, 12 * GB, Flags.HIDDEN | Flags.SYSTEM),
+    add("$MFT", root, false, 1.4 * GB, Flags.METAFILE),
+  ]) {
+    nodes[id]!.protected = true;
+  }
+
+  // Like the real guard: the drive root, Users, and profile folders can't be
+  // removed themselves; Windows and Program Files are protected throughout.
+  for (const id of [root, users, user]) nodes[id]!.protected = true;
+  const protectTree = (id: number) => {
+    nodes[id]!.protected = true;
+    nodes[id]!.kids.forEach(protectTree);
+  };
+  protectTree(win);
+  protectTree(pf);
 
   // Aggregate bottom-up (children always have larger ids than parents).
   for (let i = nodes.length - 1; i > 0; i--) {
@@ -107,6 +138,74 @@ function buildTree(rootName: string): MockNode[] {
 function view(n: MockNode): NodeView {
   const { parent: _p, kids: _k, ...rest } = n;
   return rest;
+}
+
+function mockRules(): RuleView[] {
+  const r = (
+    id: string,
+    name: string,
+    group: string,
+    tier: Tier,
+    size: number,
+    files: number,
+    extra: Partial<RuleView> = {},
+  ): RuleView => ({
+    id,
+    name,
+    group,
+    tier,
+    description: `${name}: files the app recreates on its own when needed.`,
+    lose: tier === "green" ? "Nothing; it is rebuilt automatically." : "It is downloaded or rebuilt again, which takes time.",
+    requiresAdmin: false,
+    closeApps: [],
+    minAgeDays: null,
+    userRule: false,
+    status: { kind: files > 0 ? "ready" : "nothingFound" },
+    files,
+    size,
+    hidden: 0,
+    ...extra,
+  });
+  return [
+    r("windows.user-temp", "Temporary files (your account)", "Windows", "green", 2.3 * GB, 4812, { hidden: 3 }),
+    r("windows.system-temp", "Temporary files (Windows)", "Windows", "green", 640 * MB, 512, {
+      requiresAdmin: true,
+      status: { kind: "needsAdmin" },
+    }),
+    r("windows.thumbnail-cache", "Thumbnail cache", "Windows", "green", 210 * MB, 14),
+    r("windows.error-reports", "Error reports (your account)", "Windows", "green", 48 * MB, 31),
+    r("windows.directx-shader-cache", "DirectX shader cache", "Windows", "yellow", 1.1 * GB, 2210),
+    r("windows.update-downloads", "Windows Update downloads", "Windows", "yellow", 3.4 * GB, 96, {
+      requiresAdmin: true,
+      minAgeDays: 10,
+      status: { kind: "needsAdmin" },
+    }),
+    r("chrome.cache", "Google Chrome cache", "Google Chrome", "green", 1.6 * GB, 9120, {
+      closeApps: ["chrome.exe"],
+      status: { kind: "appRunning", detail: ["chrome.exe"] },
+    }),
+    r("edge.cache", "Microsoft Edge cache", "Microsoft Edge", "green", 820 * MB, 4410, { closeApps: ["msedge.exe"] }),
+    r("discord.cache", "Discord cache", "Apps", "green", 3.1 * GB, 1203, { closeApps: ["Discord.exe"] }),
+    r("spotify.cache", "Spotify cache", "Apps", "yellow", 2.2 * GB, 610),
+    r("dev.npm-cache", "npm cache", "Developer tools", "yellow", 1.9 * GB, 30210),
+    r("dev.cargo-registry-cache", "Cargo download cache", "Developer tools", "yellow", 0, 0),
+  ];
+}
+
+function mockItems(rule: RuleView): JunkItem[] {
+  const rand = rng(rule.id.length * 7919);
+  const n = Math.min(rule.files, 400);
+  const weights = Array.from({ length: n }, () => rand() ** 3 + 0.001);
+  const total = weights.reduce((a, b) => a + b, 0);
+  return weights
+    .map((w, i) => ({
+      index: i,
+      path: `C:\\Users\\test-user\\AppData\\Local\\${rule.group.replace(/ /g, "")}\\Cache\\entry-${i + 1}.tmp`,
+      size: Math.round((w / total) * rule.size),
+      modified: 1_790_000_000 - Math.floor(rand() * 9_000_000),
+    }))
+    .sort((a, b) => b.size - a.size)
+    .map((item, i) => ({ ...item, index: i }));
 }
 
 export function createMockBackend(): Backend {
@@ -146,6 +245,56 @@ export function createMockBackend(): Backend {
       otherCount: Math.max(0, kids.length - max),
     };
   };
+
+  // Cleaner, recovery bin, and settings state.
+  let junkId = 1000;
+  const items = new Map<string, JunkItem[]>();
+  // Keep each rule's totals equal to its (synthetic) files.
+  let rules: RuleView[] = mockRules().map((r) => {
+    const list = mockItems(r);
+    items.set(r.id, list);
+    return { ...r, files: list.length, size: list.reduce((s, i) => s + i.size, 0) };
+  });
+  let plan: (PlanView & { label: string; tiers: Tier[]; sizes: number[]; paths: string[] }) | null = null;
+  let cleanTimer: ReturnType<typeof setInterval> | null = null;
+  const batches: Batch[] = [
+    {
+      id: "20261015T091200Z-0a1b00",
+      createdAt: 1_792_055_520,
+      label: "Cleaner",
+      items: Array.from({ length: 6 }, (_, i): BinItem => ({
+        id: i,
+        original: `C:\\Users\\test-user\\AppData\\Local\\Spotify\\Data\\chunk-${i + 1}.file`,
+        stored: `C:\\Users\\test-user\\AppData\\Local\\WinFastCleaner\\recovery\\bin\\20261015T091200Z-0a1b00\\${i}`,
+        size: (i + 1) * 37 * MB,
+        tier: "yellow",
+        rule: "spotify.cache",
+        state: "inBin",
+      })),
+    },
+  ];
+  let settingsView: SettingsView = {
+    settings: {
+      exclusions: [{ kind: "folder", value: "C:\\Users\\test-user\\Projects\\keep" }],
+      greenToBin: false,
+      bin: { maxBytes: 5 * GB, maxPercent: 10, maxBatches: 5, maxAgeDays: 14 },
+    },
+    dataDir: "C:\\Users\\test-user\\AppData\\Local\\WinFastCleaner",
+    rulesDir: "C:\\Users\\test-user\\AppData\\Local\\WinFastCleaner\\rules",
+    userRules: 0,
+    ruleErrors: [],
+  };
+  const summaries = () =>
+    batches
+      .map((b) => ({
+        id: b.id,
+        createdAt: b.createdAt,
+        label: b.label,
+        items: b.items.length,
+        size: b.items.reduce((s, i) => s + i.size, 0),
+      }))
+      .sort((a, b) => b.createdAt - a.createdAt);
+  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   return {
     appInfo: async () => ({ name: "WinFastCleaner", version: "0.1.0 (mock)", platform: "windows", elevated: false }),
@@ -234,5 +383,213 @@ export function createMockBackend(): Backend {
       throw new Error("Restarting as administrator is not available in the mock.");
     },
     pickFolder: async () => "D:\\",
+    pickFile: async () => "D:\\Videos\\keep-this.mkv",
+
+    startJunkScan: async (onEvent) => {
+      await delay(900);
+      junkId += 1;
+      onEvent({
+        type: "done",
+        result: {
+          scanId: junkId,
+          rules,
+          errors: [],
+          scannedAt: Math.floor(Date.now() / 1000),
+          durationMs: 850,
+          elevated: false,
+        },
+      });
+    },
+    cancelJunkScan: async () => {},
+    junkItems: async (_scan, ruleId, offset, limit) => {
+      const all = items.get(ruleId) ?? [];
+      return { total: all.length, items: all.slice(offset, offset + limit) };
+    },
+    cleanPreview: async (_scan, selection) => {
+      const p: NonNullable<typeof plan> = {
+        planId: junkId * 10 + 1,
+        count: 0,
+        totalSize: 0,
+        deleteCount: 0,
+        deleteBytes: 0,
+        binCount: 0,
+        binBytes: 0,
+        notReady: [],
+        label: "Cleaner",
+        tiers: [],
+        sizes: [],
+        paths: [],
+      };
+      for (const sel of selection) {
+        const r = rules.find((x) => x.id === sel.ruleId);
+        if (!r) throw new Error("Unknown rule.");
+        if (r.status.kind !== "ready") {
+          if (r.status.kind !== "nothingFound") p.notReady.push({ ruleId: r.id, status: r.status });
+          continue;
+        }
+        const off = new Set(sel.deselected);
+        for (const item of items.get(r.id) ?? []) {
+          if (off.has(item.index)) continue;
+          p.count += 1;
+          p.totalSize += item.size;
+          p.tiers.push(r.tier);
+          p.sizes.push(item.size);
+          p.paths.push(item.path);
+          if (r.tier === "green" && !settingsView.settings.greenToBin) {
+            p.deleteCount += 1;
+            p.deleteBytes += item.size;
+          } else {
+            p.binCount += 1;
+            p.binBytes += item.size;
+          }
+        }
+      }
+      plan = p;
+      return p;
+    },
+    cleanManual: async (scan, nodeIds) => {
+      const picked = nodeIds.map(get);
+      const rejected = picked.filter((n) => n.protected).map((n) => ({ path: pathOf(n.id), reason: "Protected: Windows folder" }));
+      const ok = picked.filter((n) => !n.protected);
+      const size = ok.reduce((s, n) => s + n.size, 0);
+      const count = ok.reduce((s, n) => s + (n.isDir ? n.files : 1), 0);
+      plan = {
+        planId: scan * 100 + nodeIds.length,
+        count,
+        totalSize: size,
+        deleteCount: 0,
+        deleteBytes: 0,
+        binCount: count,
+        binBytes: size,
+        notReady: [],
+        label: "Disk view",
+        tiers: ok.map(() => "red"),
+        sizes: ok.map((n) => n.size),
+        paths: ok.map((n) => pathOf(n.id)),
+      };
+      return {
+        plan,
+        sample: ok.slice(0, 100).map((n) => ({ path: pathOf(n.id), size: n.size })),
+        rejected,
+      };
+    },
+    cleanExecute: async (planId, onEvent) => {
+      if (!plan || plan.planId !== planId) throw new Error("This preview is out of date. Please review it again.");
+      const p = plan;
+      plan = null;
+      let done = 0;
+      cleanTimer = setInterval(() => {
+        done = Math.min(p.count, done + Math.ceil(p.count / 8));
+        onEvent({ type: "progress", done, total: p.count });
+        if (done < p.count) return;
+        clearInterval(cleanTimer!);
+        cleanTimer = null;
+        const locked = Math.min(3, p.count);
+        const report: CleanReport = {
+          deletedCount: p.deleteCount,
+          deletedBytes: p.deleteBytes,
+          binnedCount: p.binCount,
+          binnedBytes: p.binBytes,
+          skippedCount: locked,
+          skipped: Array.from({ length: locked }, (_, i) => ({
+            path: p.paths[i] ?? "C:\\Users\\test-user\\AppData\\Local\\Temp\\locked.tmp",
+            reason: "In use by another program",
+          })),
+          freedBytes: p.deleteBytes + p.binBytes,
+          batchId: p.binCount > 0 ? `20261017T1200${String(batches.length).padStart(2, "0")}Z-mock00` : null,
+          evicted: { batches: 0, files: 0, bytes: 0, failed: 0 },
+          foldersRemoved: 4,
+        };
+        if (report.batchId) {
+          batches.push({
+            id: report.batchId,
+            createdAt: Math.floor(Date.now() / 1000),
+            label: p.label,
+            items: p.paths
+              .map((path, i) => ({ path, i }))
+              .filter(({ i }) => p.tiers[i] !== "green" || settingsView.settings.greenToBin)
+              .slice(0, 200)
+              .map(({ path, i }) => ({
+                id: i,
+                original: path,
+                stored: `bin\\${i}`,
+                size: p.sizes[i] ?? 0,
+                tier: p.tiers[i] ?? "red",
+                rule: null,
+                state: "inBin" as const,
+              })),
+          });
+        }
+        // The cleaned files are gone from the next scan.
+        rules = rules.map((r) =>
+          r.status.kind === "ready" && p.paths.some((x) => (items.get(r.id) ?? []).some((i) => i.path === x))
+            ? { ...r, files: 0, size: 0, status: { kind: "nothingFound" } }
+            : r,
+        );
+        onEvent({ type: "done", report });
+      }, 200);
+    },
+    cancelClean: async () => {},
+    deepClean: async () => {
+      throw new Error("Deep clean needs administrator rights. Restart as administrator first.");
+    },
+
+    recoveryOverview: async () => ({
+      batches: summaries(),
+      usage: [{ drive: "C:\\", bytes: summaries().reduce((s, b) => s + b.size, 0), limit: 5 * GB }],
+      limits: settingsView.settings.bin,
+    }),
+    recoveryBatch: async (id) => {
+      const b = batches.find((x) => x.id === id);
+      if (!b) throw new Error("Unknown recovery batch.");
+      return b;
+    },
+    recoveryConflicts: async (id, itemIds) => {
+      const b = batches.find((x) => x.id === id);
+      return (b?.items ?? []).filter((i) => (itemIds ? itemIds.includes(i.id) : true) && i.id === 0).map((i) => i.original);
+    },
+    recoveryRestore: async (id, itemIds, conflict) => {
+      const b = batches.find((x) => x.id === id);
+      if (!b) throw new Error("Unknown recovery batch.");
+      const chosen = b.items.filter((i) => (itemIds ? itemIds.includes(i.id) : true));
+      const blocked = conflict === "skip" ? chosen.filter((i) => i.id === 0) : [];
+      const restored = chosen.filter((i) => !blocked.includes(i));
+      b.items = b.items.filter((i) => !restored.includes(i));
+      if (b.items.length === 0) batches.splice(batches.indexOf(b), 1);
+      return {
+        restored: restored.length,
+        restoredBytes: restored.reduce((s, i) => s + i.size, 0),
+        renamed: conflict === "keepBoth" ? restored.filter((i) => i.id === 0).map((i) => i.original + " (restored)") : [],
+        skipped: blocked.map((i) => [i.original, "A file with that name already exists"] as [string, string]),
+      };
+    },
+    recoveryDelete: async (id) => {
+      const i = batches.findIndex((x) => x.id === id);
+      if (i < 0) return { batches: 0, files: 0, bytes: 0, failed: 0 };
+      const [b] = batches.splice(i, 1);
+      return { batches: 1, files: b!.items.length, bytes: b!.items.reduce((s, x) => s + x.size, 0), failed: 0 };
+    },
+    recoveryEmpty: async () => {
+      const files = batches.reduce((s, b) => s + b.items.length, 0);
+      const bytes = batches.reduce((s, b) => s + b.items.reduce((t, x) => t + x.size, 0), 0);
+      const n = batches.length;
+      batches.length = 0;
+      return { batches: n, files, bytes, failed: 0 };
+    },
+
+    getSettings: async () => settingsView,
+    saveSettings: async (settings) => {
+      for (const e of settings.exclusions) {
+        if (e.kind !== "pattern" && !/^[A-Za-z]:\\/.test(e.value)) throw new Error(`\`${e.value}\` is not a usable path.`);
+      }
+      settingsView = { ...settingsView, settings: structuredClone(settings) };
+      return settingsView;
+    },
+    excludeNode: async (_scan, nodeId) => {
+      const n = get(nodeId);
+      n.excluded = true;
+      settingsView.settings.exclusions.push({ kind: n.isDir ? "folder" : "file", value: pathOf(nodeId) });
+    },
+    openRulesFolder: async () => {},
   };
 }

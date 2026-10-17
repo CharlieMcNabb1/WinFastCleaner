@@ -68,6 +68,10 @@ export interface NodeView {
   modified: number;
   flags: number;
   childCount: number;
+  /** The safety guard never lets the cleaner touch this item. */
+  protected: boolean;
+  /** On the user's exclusions list. */
+  excluded: boolean;
 }
 
 export interface NodeDetail extends NodeView {
@@ -117,3 +121,196 @@ export const Flags = {
   SYSTEM: 1 << 9,
   HAS_UNREADABLE: 1 << 10,
 } as const;
+
+// ----------------------------------------------------------------- cleaner
+// (see app/src-tauri/src/cleaning.rs)
+
+export type Tier = "green" | "yellow" | "red";
+
+export type RuleStatus =
+  | { kind: "ready" }
+  | { kind: "needsAdmin" }
+  | { kind: "appRunning"; detail: string[] }
+  | { kind: "nothingFound" };
+
+export interface RuleView {
+  id: string;
+  name: string;
+  group: string;
+  tier: Tier;
+  description: string;
+  lose: string;
+  requiresAdmin: boolean;
+  closeApps: string[];
+  minAgeDays: number | null;
+  userRule: boolean;
+  status: RuleStatus;
+  files: number;
+  size: number;
+  hidden: number;
+}
+
+export interface RuleError {
+  source: string;
+  rule: string | null;
+  message: string;
+}
+
+export interface JunkView {
+  scanId: number;
+  rules: RuleView[];
+  errors: RuleError[];
+  scannedAt: number;
+  durationMs: number;
+  elevated: boolean;
+}
+
+export type JunkEvent =
+  | { type: "done"; result: JunkView }
+  | { type: "cancelled" }
+  | { type: "failed"; message: string };
+
+export interface JunkItem {
+  index: number;
+  path: string;
+  size: number;
+  modified: number;
+}
+
+export interface JunkItemsPage {
+  total: number;
+  items: JunkItem[];
+}
+
+export interface RuleSelection {
+  ruleId: string;
+  /** Indexes of files unticked in the preview. */
+  deselected: number[];
+}
+
+export interface PlanView {
+  planId: number;
+  count: number;
+  totalSize: number;
+  deleteCount: number;
+  deleteBytes: number;
+  binCount: number;
+  binBytes: number;
+  notReady: { ruleId: string; status: RuleStatus }[];
+}
+
+export interface ManualPlanView {
+  plan: PlanView;
+  sample: { path: string; size: number }[];
+  rejected: { path: string; reason: string }[];
+}
+
+export interface PurgeReport {
+  batches: number;
+  files: number;
+  bytes: number;
+  failed: number;
+}
+
+export interface CleanReport {
+  deletedCount: number;
+  deletedBytes: number;
+  binnedCount: number;
+  binnedBytes: number;
+  skippedCount: number;
+  skipped: { path: string; reason: string }[];
+  freedBytes: number;
+  batchId: string | null;
+  evicted: PurgeReport;
+  foldersRemoved: number;
+}
+
+export type CleanEvent =
+  | { type: "progress"; done: number; total: number }
+  | { type: "done"; report: CleanReport }
+  | { type: "failed"; message: string };
+
+export type DeepCleanEvent =
+  | { type: "progress"; percent: number }
+  | { type: "done"; freedBytes: number; restartNeeded: boolean }
+  | { type: "failed"; message: string };
+
+// ----------------------------------------------------------------- recovery
+// (see app/src-tauri/src/recover.rs)
+
+export interface BatchSummary {
+  id: string;
+  createdAt: number;
+  label: string;
+  items: number;
+  size: number;
+}
+
+export interface BinItem {
+  id: number;
+  original: string;
+  stored: string;
+  size: number;
+  tier: Tier;
+  rule: string | null;
+  state: "pending" | "inBin";
+}
+
+export interface Batch {
+  id: string;
+  createdAt: number;
+  label: string;
+  items: BinItem[];
+}
+
+export interface DriveUsage {
+  drive: string;
+  bytes: number;
+  limit: number;
+}
+
+export interface BinLimits {
+  maxBytes: number;
+  maxPercent: number;
+  maxBatches: number;
+  maxAgeDays: number;
+}
+
+export interface RecoveryOverview {
+  batches: BatchSummary[];
+  usage: DriveUsage[];
+  limits: BinLimits;
+}
+
+export type Conflict = "skip" | "keepBoth" | "overwrite";
+
+export interface RestoreReport {
+  restored: number;
+  restoredBytes: number;
+  renamed: string[];
+  skipped: [string, string][];
+}
+
+// ----------------------------------------------------------------- settings
+// (see app/src-tauri/src/settings_cmds.rs)
+
+export type ExclusionKind = "folder" | "file" | "pattern";
+
+export interface Exclusion {
+  kind: ExclusionKind;
+  value: string;
+}
+
+export interface Settings {
+  exclusions: Exclusion[];
+  greenToBin: boolean;
+  bin: BinLimits;
+}
+
+export interface SettingsView {
+  settings: Settings;
+  dataDir: string;
+  rulesDir: string;
+  userRules: number;
+  ruleErrors: RuleError[];
+}

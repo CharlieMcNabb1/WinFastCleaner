@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-clean-execute"
+description = "Enables the clean_execute command without any pre-configured scope."
+commands.allow = ["clean_execute"]
+
+[[permission]]
+identifier = "deny-clean-execute"
+description = "Denies the clean_execute command without any pre-configured scope."
+commands.deny = ["clean_execute"]

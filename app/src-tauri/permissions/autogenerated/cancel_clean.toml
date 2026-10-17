@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cancel-clean"
+description = "Enables the cancel_clean command without any pre-configured scope."
+commands.allow = ["cancel_clean"]
+
+[[permission]]
+identifier = "deny-cancel-clean"
+description = "Denies the cancel_clean command without any pre-configured scope."
+commands.deny = ["cancel_clean"]

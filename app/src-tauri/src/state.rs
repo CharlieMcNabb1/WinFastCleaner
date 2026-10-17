@@ -1,7 +1,9 @@
-//! Shared app state: the running scan (if any) and the last finished one.
+//! Shared app state: the running scan (if any), the last finished one, and
+//! the cleaner's latest results and previewed plan.
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use cleaner_core::cleaner::{CleanPlan, JunkScan};
 use cleaner_core::progress::CancelToken;
 use cleaner_core::scan::Scan;
 
@@ -13,11 +15,41 @@ pub struct LoadedScan {
     pub scan: Scan,
 }
 
+/// The latest junk scan. Rule items are referred to by index within it.
+#[derive(Debug)]
+pub struct LoadedJunk {
+    pub id: u64,
+    pub scan: JunkScan,
+}
+
+/// A plan the user has seen. Only a previewed plan can be executed, and
+/// only once.
+#[derive(Debug)]
+pub struct PreviewedPlan {
+    pub id: u64,
+    pub plan: CleanPlan,
+    pub label: &'static str,
+    /// The "send green items to the bin" setting the preview was shown with.
+    pub green_to_bin: bool,
+}
+
 #[derive(Debug, Default)]
 pub struct Inner {
     pub next_id: u64,
     pub running: Option<(u64, CancelToken)>,
     pub current: Option<Arc<LoadedScan>>,
+    pub junk_running: Option<CancelToken>,
+    pub junk: Option<Arc<LoadedJunk>>,
+    pub plan: Option<PreviewedPlan>,
+    pub cleaning: Option<CancelToken>,
+    pub deep_cleaning: bool,
+}
+
+impl Inner {
+    pub fn new_id(&mut self) -> u64 {
+        self.next_id += 1;
+        self.next_id
+    }
 }
 
 #[derive(Debug, Default)]

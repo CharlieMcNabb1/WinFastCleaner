@@ -1,12 +1,32 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
+  import CleanerView from "./components/CleanerView.svelte";
   import DiskView from "./components/DiskView.svelte";
-  import Icon from "./components/Icon.svelte";
+  import Icon, { type IconName } from "./components/Icon.svelte";
+  import RecoverView from "./components/RecoverView.svelte";
+  import SettingsView from "./components/SettingsView.svelte";
   import { backend } from "./lib/backend.ts";
   import type { AppInfo } from "./lib/types.ts";
 
+  type Tab = "disk" | "cleaner" | "recover" | "settings";
+  const TABS: { id: Tab; label: string; icon: IconName }[] = [
+    { id: "disk", label: "Disk", icon: "drive" },
+    { id: "cleaner", label: "Cleaner", icon: "sparkle" },
+    { id: "recover", label: "Recover", icon: "restore" },
+    { id: "settings", label: "Settings", icon: "sliders" },
+  ];
+
   let info = $state<AppInfo | null>(null);
+  let tab = $state<Tab>("disk");
+  // Tabs stay alive once opened, so long operations keep running while the
+  // user browses elsewhere.
+  let opened = $state<Set<Tab>>(new Set(["disk"]));
+
+  function go(t: Tab) {
+    tab = t;
+    if (!opened.has(t)) opened = new Set([...opened, t]);
+  }
 
   onMount(async () => {
     try {
@@ -24,9 +44,13 @@
       <span>WinFastCleaner</span>
     </div>
     <ul>
-      <li>
-        <button class="tab active" aria-current="page"><Icon name="drive" /> Disk</button>
-      </li>
+      {#each TABS as t (t.id)}
+        <li>
+          <button class="tab" class:active={tab === t.id} aria-current={tab === t.id ? "page" : undefined} onclick={() => go(t.id)}>
+            <Icon name={t.icon} /> {t.label}
+          </button>
+        </li>
+      {/each}
     </ul>
     <div class="foot muted">
       <p>No ads · No telemetry · Works offline</p>
@@ -41,7 +65,16 @@
     </div>
   </nav>
   <main>
-    <DiskView {info} />
+    <div class="pane" hidden={tab !== "disk"}><DiskView {info} onNavigate={go} /></div>
+    {#if opened.has("cleaner")}
+      <div class="pane" hidden={tab !== "cleaner"}><CleanerView {info} active={tab === "cleaner"} onNavigate={go} /></div>
+    {/if}
+    {#if opened.has("recover")}
+      <div class="pane" hidden={tab !== "recover"}><RecoverView active={tab === "recover"} /></div>
+    {/if}
+    {#if opened.has("settings")}
+      <div class="pane" hidden={tab !== "settings"}><SettingsView {info} active={tab === "settings"} /></div>
+    {/if}
   </main>
 </div>
 
@@ -82,6 +115,9 @@
     background: none;
     text-align: left;
   }
+  .tab:hover:not(.active) {
+    background: var(--surface-2);
+  }
   .tab.active {
     background: var(--accent-2);
     color: var(--accent);
@@ -99,5 +135,11 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+  }
+  .pane {
+    height: 100%;
+  }
+  .pane[hidden] {
+    display: none;
   }
 </style>

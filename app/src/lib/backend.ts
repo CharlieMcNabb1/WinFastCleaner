@@ -1,10 +1,24 @@
 import type {
   AppInfo,
+  Batch,
   ChildrenPage,
   ChildrenQuery,
+  CleanEvent,
+  Conflict,
+  DeepCleanEvent,
   DriveInfo,
+  JunkEvent,
+  JunkItemsPage,
+  ManualPlanView,
   NodeDetail,
+  PlanView,
+  PurgeReport,
+  RecoveryOverview,
+  RestoreReport,
+  RuleSelection,
   ScanEvent,
+  Settings,
+  SettingsView,
   TreemapNode,
 } from "./types.ts";
 
@@ -20,7 +34,34 @@ export interface Backend {
   openInExplorer(scanId: number, nodeId: number): Promise<void>;
   relaunchElevated(): Promise<void>;
   /** Shows the native folder picker. Resolves to null if cancelled. */
-  pickFolder(): Promise<string | null>;
+  pickFolder(title?: string): Promise<string | null>;
+  /** Shows the native file picker. Resolves to null if cancelled. */
+  pickFile(title?: string): Promise<string | null>;
+
+  // Cleaner
+  startJunkScan(onEvent: (e: JunkEvent) => void): Promise<void>;
+  cancelJunkScan(): Promise<void>;
+  junkItems(scanId: number, ruleId: string, offset: number, limit: number): Promise<JunkItemsPage>;
+  cleanPreview(scanId: number, selection: RuleSelection[]): Promise<PlanView>;
+  /** Plans items picked in the Disk view (always red tier, always to the bin). */
+  cleanManual(scanId: number, nodeIds: number[]): Promise<ManualPlanView>;
+  cleanExecute(planId: number, onEvent: (e: CleanEvent) => void): Promise<void>;
+  cancelClean(): Promise<void>;
+  deepClean(onEvent: (e: DeepCleanEvent) => void): Promise<void>;
+
+  // Recovery bin
+  recoveryOverview(): Promise<RecoveryOverview>;
+  recoveryBatch(batchId: string): Promise<Batch>;
+  recoveryConflicts(batchId: string, itemIds: number[] | null): Promise<string[]>;
+  recoveryRestore(batchId: string, itemIds: number[] | null, conflict: Conflict): Promise<RestoreReport>;
+  recoveryDelete(batchId: string): Promise<PurgeReport>;
+  recoveryEmpty(): Promise<PurgeReport>;
+
+  // Settings
+  getSettings(): Promise<SettingsView>;
+  saveSettings(settings: Settings): Promise<SettingsView>;
+  excludeNode(scanId: number, nodeId: number): Promise<void>;
+  openRulesFolder(): Promise<void>;
 }
 
 let instance: Promise<Backend> | null = null;

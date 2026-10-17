@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-recovery-batch"
+description = "Enables the recovery_batch command without any pre-configured scope."
+commands.allow = ["recovery_batch"]
+
+[[permission]]
+identifier = "deny-recovery-batch"
+description = "Denies the recovery_batch command without any pre-configured scope."
+commands.deny = ["recovery_batch"]
