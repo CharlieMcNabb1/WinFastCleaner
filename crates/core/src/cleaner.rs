@@ -1302,7 +1302,8 @@ mod tests {
         setup(&e);
         let outside = e.tmp.path().join("outside");
         write(&outside.join("precious.doc"), 100);
-        let link = e.junk.join("App/Cache/junction");
+        // Backslashes only: cmd reads "/Cache" as a switch.
+        let link = e.junk.join("App").join("Cache").join("junction");
         let ok = std::process::Command::new("cmd")
             .args(["/C", "mklink", "/J"])
             .arg(&link)
