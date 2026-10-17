@@ -4,6 +4,8 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use cleaner_core::cleaner::{CleanPlan, JunkScan};
+use cleaner_core::dupes::DupeResult;
+use cleaner_core::finder::FinderResult;
 use cleaner_core::progress::CancelToken;
 use cleaner_core::scan::Scan;
 
@@ -33,6 +35,20 @@ pub struct PreviewedPlan {
     pub green_to_bin: bool,
 }
 
+/// The latest large/old file results. Files are referred to by index.
+#[derive(Debug)]
+pub struct LoadedFind {
+    pub id: u64,
+    pub result: FinderResult,
+}
+
+/// The latest duplicate results. Files are referred to by (group, file).
+#[derive(Debug)]
+pub struct LoadedDupes {
+    pub id: u64,
+    pub result: DupeResult,
+}
+
 #[derive(Debug, Default)]
 pub struct Inner {
     pub next_id: u64,
@@ -43,6 +59,10 @@ pub struct Inner {
     pub plan: Option<PreviewedPlan>,
     pub cleaning: Option<CancelToken>,
     pub deep_cleaning: bool,
+    /// A Files tab search (large/old or duplicates) in progress.
+    pub finding: Option<CancelToken>,
+    pub found: Option<Arc<LoadedFind>>,
+    pub dupes: Option<Arc<LoadedDupes>>,
 }
 
 impl Inner {

@@ -8,7 +8,11 @@ import type {
   BinItem,
   ChildrenPage,
   CleanReport,
+  ComparisonView,
   DriveInfo,
+  DupeGroupView,
+  FileKind,
+  FoundFile,
   JunkItem,
   NodeDetail,
   NodeView,
@@ -208,6 +212,51 @@ function mockItems(rule: RuleView): JunkItem[] {
     .map((item, i) => ({ ...item, index: i }));
 }
 
+function mockFound(root: string, old: boolean): FoundFile[] {
+  const rand = rng(old ? 11 : 7);
+  const names: [string, FileKind][] = [
+    ["Videos\\holiday-2019.mkv", "video"],
+    ["Downloads\\win11-23h2.iso", "diskImage"],
+    ["Downloads\\game-setup.exe", "installer"],
+    ["Videos\\screen-recording.mp4", "video"],
+    ["Downloads\\photos-backup.zip", "archive"],
+    ["Documents\\scans.pdf", "document"],
+    ["Downloads\\driver-pack.msi", "installer"],
+    ["Music\\live-set.flac", "audio"],
+    ["Pictures\\raw\\IMG_0001.cr2", "image"],
+    ["Downloads\\vm-disk.vhdx", "diskImage"],
+  ];
+  return names
+    .map(([rel, kind], i) => {
+      const modified = old ? 1_700_000_000 - Math.floor(rand() * 60_000_000) : 1_790_000_000 - Math.floor(rand() * 20_000_000);
+      return {
+        index: i,
+        path: `${root}Users\\test-user\\${rel}`,
+        size: Math.floor((rand() * 6 + (old ? 0.01 : 0.1)) * GB),
+        modified,
+        lastUsed: modified + 3600,
+        kind,
+      };
+    })
+    .sort((a, b) => b.size - a.size)
+    .map((f, i) => ({ ...f, index: i }));
+}
+
+function mockDupes(root: string): DupeGroupView[] {
+  const groups: [number, string[], number[]][] = [
+    [2.4 * GB, ["Downloads\\ubuntu.iso", "Desktop\\ubuntu (1).iso", "ISOs\\ubuntu.iso"], [1_780_000_000, 1_785_000_000, 1_760_000_000]],
+    [850 * MB, ["Videos\\wedding.mp4", "Backup\\Videos\\wedding.mp4"], [1_700_000_000, 1_720_000_000]],
+    [12 * MB, ["Documents\\report-final.pdf", "Downloads\\report-final.pdf"], [1_789_000_000, 1_789_500_000]],
+  ];
+  return groups.map(([size, rels, mods], gi) => ({
+    index: gi,
+    size,
+    hash: `b3${gi}f0c0ffee${gi}`.padEnd(64, "0"),
+    wasted: size * (rels.length - 1),
+    files: rels.map((rel, fi) => ({ index: fi, path: `${root}Users\\test-user\\${rel}`, modified: mods[fi]! })),
+  }));
+}
+
 export function createMockBackend(): Backend {
   let nodes: MockNode[] = [];
   let scanId = 0;
@@ -278,6 +327,7 @@ export function createMockBackend(): Backend {
       exclusions: [{ kind: "folder", value: "C:\\Users\\test-user\\Projects\\keep" }],
       greenToBin: false,
       bin: { maxBytes: 5 * GB, maxPercent: 10, maxBatches: 5, maxAgeDays: 14 },
+      snapshotDays: 90,
     },
     dataDir: "C:\\Users\\test-user\\AppData\\Local\\WinFastCleaner",
     rulesDir: "C:\\Users\\test-user\\AppData\\Local\\WinFastCleaner\\rules",
@@ -295,6 +345,27 @@ export function createMockBackend(): Backend {
       }))
       .sort((a, b) => b.createdAt - a.createdAt);
   const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let findId = 5000;
+  let found: FoundFile[] = [];
+  let dupeGroups: DupeGroupView[] = [];
+  const manualPlan = (picked: { path: string; size: number }[], label: string) => {
+    const size = picked.reduce((s, f) => s + f.size, 0);
+    plan = {
+      planId: ++findId,
+      count: picked.length,
+      totalSize: size,
+      deleteCount: 0,
+      deleteBytes: 0,
+      binCount: picked.length,
+      binBytes: size,
+      notReady: [],
+      label,
+      tiers: picked.map(() => "red"),
+      sizes: picked.map((f) => f.size),
+      paths: picked.map((f) => f.path),
+    };
+    return { plan, sample: [...picked].sort((a, b) => b.size - a.size).slice(0, 100), rejected: [] };
+  };
 
   return {
     appInfo: async () => ({ name: "WinFastCleaner", version: "0.1.0 (mock)", platform: "windows", elevated: false }),
@@ -591,5 +662,96 @@ export function createMockBackend(): Backend {
       settingsView.settings.exclusions.push({ kind: n.isDir ? "folder" : "file", value: pathOf(nodeId) });
     },
     openRulesFolder: async () => {},
+
+    startFind: async (path, request, _rescan, onEvent) => {
+      for (let i = 1; i <= 5; i++) {
+        await delay(150);
+        onEvent({ type: "scanning", files: i * 41_000, bytes: i * 21 * GB });
+      }
+      let files = mockFound(path, request.mode === "old").filter((f) => f.size >= request.minSize);
+      if (request.kinds.length > 0) files = files.filter((f) => request.kinds.includes(f.kind));
+      found = files;
+      onEvent({
+        type: "files",
+        result: {
+          findId: ++findId,
+          root: path,
+          reusedScan: path === "C:\\",
+          scannedAt: Math.floor(Date.now() / 1000),
+          files,
+          more: 0,
+          hidden: 4,
+          recentlyOpened: request.mode === "old" ? 2 : 0,
+        },
+      });
+    },
+    startDupes: async (path, _minSize, _kinds, _rescan, onEvent) => {
+      onEvent({ type: "comparing", phase: "sizes", done: 0, total: 0 });
+      for (let i = 1; i <= 6; i++) {
+        await delay(150);
+        onEvent({ type: "comparing", phase: "hashing", done: i * 700 * MB, total: 4.2 * GB });
+      }
+      dupeGroups = mockDupes(path);
+      onEvent({
+        type: "dupes",
+        result: {
+          dupesId: ++findId,
+          root: path,
+          reusedScan: false,
+          scannedAt: Math.floor(Date.now() / 1000),
+          groups: dupeGroups,
+          wasted: dupeGroups.reduce((s, g) => s + g.wasted, 0),
+          filesHashed: 7,
+          bytesHashed: 4.2 * GB,
+          unreadable: 1,
+          hidden: 3,
+        },
+      });
+    },
+    cancelFind: async () => {},
+    filesPlan: async (_id, indexes) => {
+      const picked = indexes.map((i) => found[i]!).filter(Boolean);
+      return manualPlan(picked.map((f) => ({ path: f.path, size: f.size })), "Large and old files");
+    },
+    dupesPlan: async (_id, picks) => {
+      const byGroup = new Map<number, number>();
+      for (const [g] of picks) byGroup.set(g, (byGroup.get(g) ?? 0) + 1);
+      for (const [g, n] of byGroup) {
+        if (n >= (dupeGroups[g]?.files.length ?? 0)) throw new Error("Keep at least one copy. Every copy was selected.");
+      }
+      return manualPlan(
+        picks.map(([g, f]) => ({ path: dupeGroups[g]!.files[f]!.path, size: dupeGroups[g]!.size })),
+        "Duplicates",
+      );
+    },
+
+    listSnapshots: async () => [
+      { key: "C_-1-20261017T090000Z.snapshot.json", root: "C:\\", takenAt: 1_792_227_600, size: 106 * GB },
+      { key: "C_-1-20261009T090000Z.snapshot.json", root: "C:\\", takenAt: 1_791_536_400, size: 101 * GB },
+      { key: "C_-1-20260920T090000Z.snapshot.json", root: "C:\\", takenAt: 1_789_894_800, size: 98 * GB },
+      { key: "D_-2-20261012T090000Z.snapshot.json", root: "D:\\", takenAt: 1_791_795_600, size: 640 * GB },
+    ],
+    compareSnapshots: async (older, newer): Promise<ComparisonView> => {
+      const days = older.includes("20260920") ? 2 : 1;
+      const u = "C:\\Users\\test-user\\";
+      return {
+        root: "C:\\",
+        oldTakenAt: older.includes("20260920") ? 1_789_894_800 : 1_791_536_400,
+        newTakenAt: newer.includes("20261017") ? 1_792_227_600 : 1_791_536_400,
+        totalDelta: days * 4.6 * GB,
+        threshold: 50 * MB,
+        grew: [
+          { path: `${u}AppData\\Roaming\\discord\\Cache`, oldSize: 120 * MB, newSize: 120 * MB + days * 3.1 * GB, delta: days * 3.1 * GB, rule: { id: "discord.cache", name: "Discord cache" } },
+          { path: `${u}Videos\\Captures`, oldSize: null, newSize: days * 900 * MB, delta: days * 900 * MB, rule: null },
+          { path: `${u}AppData\\Local\\npm-cache`, oldSize: 400 * MB, newSize: 400 * MB + days * 610 * MB, delta: days * 610 * MB, rule: { id: "dev.npm-cache", name: "npm cache" } },
+          { path: "C:\\Windows\\SoftwareDistribution\\Download", oldSize: 300 * MB, newSize: 300 * MB + 240 * MB, delta: 240 * MB, rule: { id: "windows.update-downloads", name: "Windows Update downloads" } },
+        ],
+        shrank: [{ path: `${u}Downloads`, oldSize: 6 * GB, newSize: 5 * GB, delta: -1 * GB, rule: null }],
+      };
+    },
+    locateNode: async (_scan, path) => {
+      const id = nodes.findIndex((_, i) => pathOf(i) === path);
+      return id >= 0 ? id : null;
+    },
   };
 }

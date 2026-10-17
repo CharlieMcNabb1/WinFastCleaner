@@ -10,6 +10,8 @@
 
 mod cleaning;
 mod commands;
+mod files;
+mod grew_cmds;
 mod recover;
 mod settings_cmds;
 mod state;
@@ -28,6 +30,7 @@ fn main() {
             commands::treemap,
             commands::open_in_explorer,
             commands::relaunch_elevated,
+            commands::locate_node,
             cleaning::start_junk_scan,
             cleaning::cancel_junk_scan,
             cleaning::junk_items,
@@ -46,6 +49,13 @@ fn main() {
             settings_cmds::save_settings,
             settings_cmds::exclude_node,
             settings_cmds::open_rules_folder,
+            files::start_find,
+            files::start_dupes,
+            files::cancel_find,
+            files::files_plan,
+            files::dupes_plan,
+            grew_cmds::list_snapshots,
+            grew_cmds::compare_snapshots,
         ])
         .run(tauri::generate_context!())
         .expect("error while running WinFastCleaner");

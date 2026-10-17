@@ -3,16 +3,20 @@
 
   import CleanerView from "./components/CleanerView.svelte";
   import DiskView from "./components/DiskView.svelte";
+  import FilesView from "./components/FilesView.svelte";
+  import GrewView from "./components/GrewView.svelte";
   import Icon, { type IconName } from "./components/Icon.svelte";
   import RecoverView from "./components/RecoverView.svelte";
   import SettingsView from "./components/SettingsView.svelte";
   import { backend } from "./lib/backend.ts";
   import type { AppInfo } from "./lib/types.ts";
 
-  type Tab = "disk" | "cleaner" | "recover" | "settings";
+  type Tab = "disk" | "cleaner" | "files" | "grew" | "recover" | "settings";
   const TABS: { id: Tab; label: string; icon: IconName }[] = [
     { id: "disk", label: "Disk", icon: "drive" },
     { id: "cleaner", label: "Cleaner", icon: "sparkle" },
+    { id: "files", label: "Files", icon: "file" },
+    { id: "grew", label: "What grew", icon: "trend" },
     { id: "recover", label: "Recover", icon: "restore" },
     { id: "settings", label: "Settings", icon: "sliders" },
   ];
@@ -26,6 +30,21 @@
   function go(t: Tab) {
     tab = t;
     if (!opened.has(t)) opened = new Set([...opened, t]);
+  }
+
+  // Cross-tab links from "What grew".
+  let seq = 0;
+  let diskTarget = $state<{ path: string; root: string; seq: number } | null>(null);
+  let cleanerFocus = $state<{ ruleId: string; seq: number } | null>(null);
+
+  function showInDisk(path: string, root: string) {
+    diskTarget = { path, root, seq: ++seq };
+    go("disk");
+  }
+
+  function openRule(ruleId: string) {
+    cleanerFocus = { ruleId, seq: ++seq };
+    go("cleaner");
   }
 
   onMount(async () => {
@@ -65,9 +84,19 @@
     </div>
   </nav>
   <main>
-    <div class="pane" hidden={tab !== "disk"}><DiskView {info} onNavigate={go} /></div>
+    <div class="pane" hidden={tab !== "disk"}><DiskView {info} target={diskTarget} onNavigate={go} /></div>
     {#if opened.has("cleaner")}
-      <div class="pane" hidden={tab !== "cleaner"}><CleanerView {info} active={tab === "cleaner"} onNavigate={go} /></div>
+      <div class="pane" hidden={tab !== "cleaner"}>
+        <CleanerView {info} active={tab === "cleaner"} focus={cleanerFocus} onNavigate={go} />
+      </div>
+    {/if}
+    {#if opened.has("files")}
+      <div class="pane" hidden={tab !== "files"}><FilesView active={tab === "files"} onNavigate={go} /></div>
+    {/if}
+    {#if opened.has("grew")}
+      <div class="pane" hidden={tab !== "grew"}>
+        <GrewView active={tab === "grew"} onShowInDisk={showInDisk} onOpenRule={openRule} />
+      </div>
     {/if}
     {#if opened.has("recover")}
       <div class="pane" hidden={tab !== "recover"}><RecoverView active={tab === "recover"} /></div>

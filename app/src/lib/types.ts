@@ -305,6 +305,8 @@ export interface Settings {
   exclusions: Exclusion[];
   greenToBin: boolean;
   bin: BinLimits;
+  /** Keep scan snapshots ("What grew") this many days. */
+  snapshotDays: number;
 }
 
 export interface SettingsView {
@@ -313,4 +315,102 @@ export interface SettingsView {
   rulesDir: string;
   userRules: number;
   ruleErrors: RuleError[];
+}
+
+// ----------------------------------------------------------------- files
+// (see app/src-tauri/src/files.rs)
+
+export type FileKind = "video" | "audio" | "image" | "archive" | "installer" | "diskImage" | "document" | "other";
+
+export interface FindRequest {
+  mode: "large" | "old";
+  minSize: number;
+  olderThanDays: number | null;
+  kinds: FileKind[];
+  limit: number;
+}
+
+export interface FoundFile {
+  index: number;
+  path: string;
+  size: number;
+  modified: number;
+  lastUsed: number;
+  kind: FileKind;
+}
+
+export interface FindView {
+  findId: number;
+  root: string;
+  reusedScan: boolean;
+  scannedAt: number;
+  files: FoundFile[];
+  more: number;
+  hidden: number;
+  recentlyOpened: number;
+}
+
+export interface DupeFileView {
+  index: number;
+  path: string;
+  modified: number;
+}
+
+export interface DupeGroupView {
+  index: number;
+  size: number;
+  hash: string;
+  wasted: number;
+  files: DupeFileView[];
+}
+
+export interface DupesView {
+  dupesId: number;
+  root: string;
+  reusedScan: boolean;
+  scannedAt: number;
+  groups: DupeGroupView[];
+  wasted: number;
+  filesHashed: number;
+  bytesHashed: number;
+  unreadable: number;
+  hidden: number;
+}
+
+export type DupePhase = "sizes" | "sampling" | "hashing";
+
+export type FindEvent =
+  | { type: "scanning"; files: number; bytes: number }
+  | { type: "comparing"; phase: DupePhase; done: number; total: number }
+  | { type: "files"; result: FindView }
+  | { type: "dupes"; result: DupesView }
+  | { type: "cancelled" }
+  | { type: "failed"; message: string };
+
+// ----------------------------------------------------------------- what grew
+// (see app/src-tauri/src/grew_cmds.rs)
+
+export interface SnapshotView {
+  key: string;
+  root: string;
+  takenAt: number;
+  size: number;
+}
+
+export interface ChangeView {
+  path: string;
+  oldSize: number | null;
+  newSize: number | null;
+  delta: number;
+  rule: { id: string; name: string } | null;
+}
+
+export interface ComparisonView {
+  root: string;
+  oldTakenAt: number;
+  newTakenAt: number;
+  totalDelta: number;
+  threshold: number;
+  grew: ChangeView[];
+  shrank: ChangeView[];
 }

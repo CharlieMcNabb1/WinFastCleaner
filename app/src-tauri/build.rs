@@ -31,6 +31,14 @@ fn main() {
             "save_settings",
             "exclude_node",
             "open_rules_folder",
+            "locate_node",
+            "start_find",
+            "start_dupes",
+            "cancel_find",
+            "files_plan",
+            "dupes_plan",
+            "list_snapshots",
+            "compare_snapshots",
         ]),
     ))
     .expect("failed to run tauri-build");

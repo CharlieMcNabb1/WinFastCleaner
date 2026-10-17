@@ -22,10 +22,13 @@
   let {
     info,
     active,
+    focus,
     onNavigate,
   }: {
     info: AppInfo | null;
     active: boolean;
+    /** A rule to scroll to and highlight (from "What grew"). */
+    focus: { ruleId: string; seq: number } | null;
     onNavigate: (tab: "recover") => void;
   } = $props();
 
@@ -51,6 +54,22 @@
   let needsAdmin = $derived(junk?.rules.filter((r) => r.status.kind === "needsAdmin") ?? []);
   let isWindows = $derived(info?.platform === "windows");
   let elevated = $derived(info?.elevated ?? false);
+
+  let highlighted = $state<string | null>(null);
+  let lastFocus = 0;
+  $effect(() => {
+    const f = focus;
+    if (!f || f.seq === lastFocus || !junk) return;
+    lastFocus = f.seq;
+    highlighted = f.ruleId;
+    // Wait for the row to render, then bring it into view.
+    requestAnimationFrame(() =>
+      document.getElementById(`rule-${f.ruleId}`)?.scrollIntoView({ block: "center", behavior: "smooth" }),
+    );
+    setTimeout(() => {
+      if (highlighted === f.ruleId) highlighted = null;
+    }, 2500);
+  });
 
   // The first visit to the tab starts a scan.
   let started = false;
@@ -307,6 +326,7 @@
                 {api}
                 scanId={junk.scanId}
                 {rule}
+                highlight={highlighted === rule.id}
                 checked={selected.has(rule.id)}
                 deselected={deselected.get(rule.id) as SvelteMap<number, number> | undefined}
                 disabled={busy}

@@ -12,6 +12,7 @@
     api,
     scanId,
     rule,
+    highlight = false,
     checked,
     deselected,
     disabled,
@@ -21,6 +22,7 @@
     api: Backend;
     scanId: number;
     rule: RuleView;
+    highlight?: boolean;
     checked: boolean;
     /** Files unticked in this rule's preview (index -> size). */
     deselected: SvelteMap<number, number> | undefined;
@@ -74,7 +76,7 @@
   }
 </script>
 
-<li class="rule" class:muted-row={!ready}>
+<li class="rule" class:muted-row={!ready} class:highlight id={`rule-${rule.id}`}>
   <div class="row">
     <input
       type="checkbox"
@@ -161,6 +163,10 @@
 <style>
   .rule {
     border-top: 1px solid var(--surface-2);
+    transition: background 0.4s;
+  }
+  .rule.highlight {
+    background: var(--accent-2);
   }
   .row {
     display: grid;

@@ -4,9 +4,13 @@ import type {
   ChildrenPage,
   ChildrenQuery,
   CleanEvent,
+  ComparisonView,
   Conflict,
   DeepCleanEvent,
   DriveInfo,
+  FileKind,
+  FindEvent,
+  FindRequest,
   JunkEvent,
   JunkItemsPage,
   ManualPlanView,
@@ -19,6 +23,7 @@ import type {
   ScanEvent,
   Settings,
   SettingsView,
+  SnapshotView,
   TreemapNode,
 } from "./types.ts";
 
@@ -62,6 +67,20 @@ export interface Backend {
   saveSettings(settings: Settings): Promise<SettingsView>;
   excludeNode(scanId: number, nodeId: number): Promise<void>;
   openRulesFolder(): Promise<void>;
+
+  // Files tab (large/old files and duplicates)
+  startFind(path: string, request: FindRequest, rescan: boolean, onEvent: (e: FindEvent) => void): Promise<void>;
+  startDupes(path: string, minSize: number, kinds: FileKind[], rescan: boolean, onEvent: (e: FindEvent) => void): Promise<void>;
+  cancelFind(): Promise<void>;
+  filesPlan(findId: number, indexes: number[]): Promise<ManualPlanView>;
+  /** Picks are [group, file] pairs. Refused if a group would lose every copy. */
+  dupesPlan(dupesId: number, picks: [number, number][]): Promise<ManualPlanView>;
+
+  // What grew
+  listSnapshots(): Promise<SnapshotView[]>;
+  compareSnapshots(older: string, newer: string): Promise<ComparisonView>;
+  /** Finds a path in a Disk scan; null when it isn't in that scan. */
+  locateNode(scanId: number, path: string): Promise<number | null>;
 }
 
 let instance: Promise<Backend> | null = null;

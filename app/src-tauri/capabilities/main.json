@@ -33,6 +33,14 @@
     "allow-save-settings",
     "allow-exclude-node",
     "allow-open-rules-folder",
+    "allow-locate-node",
+    "allow-start-find",
+    "allow-start-dupes",
+    "allow-cancel-find",
+    "allow-files-plan",
+    "allow-dupes-plan",
+    "allow-list-snapshots",
+    "allow-compare-snapshots",
     "dialog:allow-open"
   ]
 }

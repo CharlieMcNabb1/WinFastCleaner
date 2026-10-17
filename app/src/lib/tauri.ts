@@ -2,7 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type { Backend } from "./backend.ts";
-import type { CleanEvent, DeepCleanEvent, JunkEvent, ScanEvent } from "./types.ts";
+import type { CleanEvent, DeepCleanEvent, FindEvent, JunkEvent, ScanEvent } from "./types.ts";
 
 function channel<T>(onEvent: (e: T) => void): Channel<T> {
   const c = new Channel<T>();
@@ -61,5 +61,17 @@ export function createTauriBackend(): Backend {
     saveSettings: (settings) => invoke("save_settings", { settings }),
     excludeNode: (scanId, nodeId) => invoke("exclude_node", { scanId, nodeId }),
     openRulesFolder: () => invoke("open_rules_folder"),
+
+    startFind: (path, request, rescan, onEvent) =>
+      invoke("start_find", { path, request, rescan, onEvent: channel<FindEvent>(onEvent) }),
+    startDupes: (path, minSize, kinds, rescan, onEvent) =>
+      invoke("start_dupes", { path, minSize, kinds, rescan, onEvent: channel<FindEvent>(onEvent) }),
+    cancelFind: () => invoke("cancel_find"),
+    filesPlan: (findId, indexes) => invoke("files_plan", { findId, indexes }),
+    dupesPlan: (dupesId, picks) => invoke("dupes_plan", { dupesId, picks }),
+
+    listSnapshots: () => invoke("list_snapshots"),
+    compareSnapshots: (older, newer) => invoke("compare_snapshots", { older, newer }),
+    locateNode: (scanId, path) => invoke("locate_node", { scanId, path }),
   };
 }

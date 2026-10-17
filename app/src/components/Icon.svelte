@@ -30,6 +30,7 @@
     refresh: "M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4",
     plus: "M12 5v14M5 12h14",
     pattern: "M4 7h4M4 12h8M4 17h6M15 15l5 5M17.5 13.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z",
+    trend: "M3 17l6-6 4 4 8-8M15 7h6v6",
   } as const;
 
   export type IconName = keyof typeof PATHS;

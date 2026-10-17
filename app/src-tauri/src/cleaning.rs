@@ -397,6 +397,23 @@ pub fn clean_manual(
     }
     let (_, settings, ctx) = context()?;
     let (plan, rejected) = cleaner::plan_manual(&paths, &ctx);
+    Ok(manual_view(
+        &state,
+        plan,
+        rejected,
+        "Disk view",
+        settings.green_to_bin,
+    ))
+}
+
+/// Stores a plan of hand-picked (red) items and describes it for the UI.
+pub(crate) fn manual_view(
+    state: &AppState,
+    plan: CleanPlan,
+    rejected: Vec<Rejected>,
+    label: &'static str,
+    green_to_bin: bool,
+) -> ManualPlanView {
     let mut largest: Vec<&PlanItem> = plan.items.iter().collect();
     largest.sort_by_key(|i| std::cmp::Reverse(i.size));
     let sample = largest
@@ -407,12 +424,12 @@ pub fn clean_manual(
             size: i.size,
         })
         .collect();
-    let view = store_plan(&state, plan, "Disk view", settings.green_to_bin);
-    Ok(ManualPlanView {
+    let view = store_plan(state, plan, label, green_to_bin);
+    ManualPlanView {
         plan: view,
         sample,
         rejected,
-    })
+    }
 }
 
 // ------------------------------------------------------------ execute

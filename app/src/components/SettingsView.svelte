@@ -86,6 +86,12 @@
     });
   }
 
+  function setSnapshotDays(raw: string) {
+    const n = Number(raw);
+    if (!Number.isInteger(n)) return;
+    void update((s) => (s.snapshotDays = n));
+  }
+
   function setNumber(field: "maxPercent" | "maxBatches" | "maxAgeDays", raw: string) {
     const n = Number(raw);
     if (!Number.isInteger(n)) return;
@@ -158,11 +164,20 @@
       </div>
     </section>
 
+    <section class="card" aria-labelledby="set-snapshots">
+      <h2 id="set-snapshots">Scan snapshots</h2>
+      <p class="muted hint">Each scan saves folder sizes for the What grew tab. Older snapshots are deleted.</p>
+      <div class="grid">
+        <label for="snap-days">Keep snapshots for</label>
+        <span><input id="snap-days" type="number" min="1" max="3650" value={s.snapshotDays} onchange={(e) => setSnapshotDays(e.currentTarget.value)} /> days</span>
+      </div>
+    </section>
+
     <section class="card" aria-labelledby="set-exclusions">
       <h2 id="set-exclusions">Exclusions (never touch)</h2>
       <p class="muted hint">
-        Excluded files and folders are never cleaned, by any rule or selection. You can also add them from the Disk tab
-        (right-click an item).
+        Excluded files and folders are never cleaned, by any rule or selection, and the file finders skip them. You can
+        also add them from the Disk tab (right-click an item).
       </p>
       {#if s.exclusions.length === 0}
         <p class="muted">No exclusions yet.</p>
