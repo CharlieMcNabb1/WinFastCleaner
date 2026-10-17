@@ -1,10 +1,12 @@
 name: Security
 
+# Same triggers as CI, plus a weekly run so newly published advisories are
+# caught even without commits.
 on:
   push:
+    branches: [main]
   pull_request:
   schedule:
-    # Weekly, so newly published advisories are caught even without commits.
     - cron: "23 5 * * 1"
   workflow_dispatch:
 
