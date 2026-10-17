@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-recovery-conflicts"
+description = "Enables the recovery_conflicts command without any pre-configured scope."
+commands.allow = ["recovery_conflicts"]
+
+[[permission]]
+identifier = "deny-recovery-conflicts"
+description = "Denies the recovery_conflicts command without any pre-configured scope."
+commands.deny = ["recovery_conflicts"]

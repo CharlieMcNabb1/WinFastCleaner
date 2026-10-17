@@ -3,16 +3,29 @@
 
   import { type Backend, backend, errorMessage } from "../lib/backend.ts";
   import { formatCount, formatDuration, formatPercent, formatSize } from "../lib/format.ts";
-  import type { AppInfo, DriveInfo, NodeDetail, ScanProgress, ScanSummary } from "../lib/types.ts";
+  import type { AppInfo, DriveInfo, ManualPlanView, NodeDetail, NodeView, ScanProgress, ScanSummary } from "../lib/types.ts";
   import DrivePicker from "./DrivePicker.svelte";
   import FileList from "./FileList.svelte";
   import FlagBadges from "./FlagBadges.svelte";
   import FolderTree from "./FolderTree.svelte";
   import Icon from "./Icon.svelte";
+  import ManualClean from "./ManualClean.svelte";
   import ScanProgressPanel from "./ScanProgressPanel.svelte";
   import Treemap from "./Treemap.svelte";
 
-  let { info }: { info: AppInfo | null } = $props();
+  let {
+    info,
+    target,
+    onNavigate,
+    onScanned,
+  }: {
+    info: AppInfo | null;
+    /** A folder to show (from "What grew"); `seq` changes on each request. */
+    target: { path: string; root: string; seq: number } | null;
+    onNavigate: (tab: "recover") => void;
+    /** Called when a scan finishes (it also saved a snapshot). */
+    onScanned?: () => void;
+  } = $props();
 
   let api = $state<Backend | null>(null);
   let drives = $state<DriveInfo[]>([]);
@@ -27,6 +40,20 @@
   let notice = $state<string | null>(null);
   let showSkipped = $state(false);
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Bumped when exclusions change, so the list re-reads its marks. */
+  let refreshKey = $state(0);
+  let manual = $state<{ title: string; view: ManualPlanView } | null>(null);
+  /** A path to open once the scan that is running finishes. */
+  let pendingReveal: string | null = null;
+  let lastTarget = 0;
+
+  $effect(() => {
+    const t = target;
+    if (t && t.seq !== lastTarget) {
+      lastTarget = t.seq;
+      void reveal(t.path, t.root);
+    }
+  });
 
   let lineage = $derived(new Set(current?.lineage.map((c) => c.id) ?? []));
   let isWindows = $derived(info?.platform === "windows");
@@ -70,8 +97,13 @@
             summary = e.summary;
             scanId = e.scanId;
             showSkipped = false;
-            void open(0, true);
+            void open(0, true).then(() => {
+              const p = pendingReveal;
+              pendingReveal = null;
+              if (p) void reveal(p, null);
+            });
             void refreshDrives();
+            onScanned?.();
             break;
           case "cancelled":
             scanning = false;
@@ -114,6 +146,50 @@
     if (!api) return;
     try {
       await api.relaunchElevated();
+    } catch (e) {
+      error = errorMessage(e);
+    }
+  }
+
+  /** "Send to cleaner": items picked by hand are always red tier and always
+   *  go to the recovery bin. The backend builds and checks the exact list. */
+  async function sendToCleaner(node: NodeView) {
+    if (!api || scanId === null) return;
+    try {
+      manual = { title: `Move "${node.name}" to the recovery bin?`, view: await api.cleanManual(scanId, [node.id]) };
+    } catch (e) {
+      error = errorMessage(e);
+    }
+  }
+
+  /** Opens `path` in the current scan, scanning `root` first if needed. */
+  async function reveal(path: string, root: string | null) {
+    api ??= await backend();
+    if (scanId !== null) {
+      try {
+        const id = await api.locateNode(scanId, path);
+        if (id !== null) {
+          await open(id);
+          return;
+        }
+      } catch {
+        // Not in this scan; scan its root below.
+      }
+    }
+    if (root && !scanning) {
+      pendingReveal = path;
+      await startScan(root);
+    } else if (!root) {
+      showNotice("That folder isn't in this scan anymore.");
+    }
+  }
+
+  async function exclude(node: NodeView) {
+    if (!api || scanId === null) return;
+    try {
+      await api.excludeNode(scanId, node.id);
+      refreshKey += 1;
+      showNotice(`"${node.name}" added to exclusions`);
     } catch (e) {
       error = errorMessage(e);
     }
@@ -162,6 +238,16 @@
       <span>{error}</span>
       <button class="btn ghost" aria-label="Dismiss" onclick={() => (error = null)}><Icon name="x" /></button>
     </div>
+  {/if}
+
+  {#if api}
+    <ManualClean
+      {api}
+      bind:request={manual}
+      {onNavigate}
+      onDone={() => showNotice("Scan again to update the sizes shown here.")}
+      onError={(m) => (error = m)}
+    />
   {/if}
 
   {#if summary && scanId !== null && api && root && current}
@@ -231,8 +317,11 @@
             folderSize={current.size}
             driveTotal={summary.volume?.total ?? null}
             canReveal={isWindows}
+            {refreshKey}
             onOpen={(id) => open(id)}
             onNotice={showNotice}
+            onSendToCleaner={sendToCleaner}
+            onExclude={exclude}
           />
         </div>
       </div>
@@ -245,6 +334,7 @@
     <div class="toast" role="status">{notice}</div>
   {/if}
 </section>
+
 
 <style>
   .disk {

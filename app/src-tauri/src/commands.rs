@@ -6,7 +6,7 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
@@ -14,8 +14,10 @@ use tauri::{AppHandle, Manager, State};
 
 use cleaner_core::platform::{self, DriveInfo};
 use cleaner_core::progress::{CancelToken, ScanProgress};
+use cleaner_core::safety::Guard;
 use cleaner_core::scan::{Scan, ScanOptions, ScanSummary, scan};
-use cleaner_core::snapshot::{self, Snapshot};
+use cleaner_core::settings::{Exclusions, Settings};
+use cleaner_core::snapshot;
 use cleaner_core::tree::{NodeId, Tree};
 
 use crate::state::{AppState, LoadedScan};
@@ -80,7 +82,7 @@ pub enum ScanEvent {
 }
 
 /// Checks a path typed or picked in the UI before scanning it.
-fn validate_scan_path(raw: &str) -> CmdResult<PathBuf> {
+pub(crate) fn validate_scan_path(raw: &str) -> CmdResult<PathBuf> {
     if raw.is_empty() || raw.chars().count() > MAX_PATH_CHARS || raw.contains('\0') {
         return Err("That is not a valid folder path.".into());
     }
@@ -110,8 +112,7 @@ pub fn start_scan(
         if s.running.is_some() {
             return Err("A scan is already running.".into());
         }
-        s.next_id += 1;
-        let id = s.next_id;
+        let id = s.new_id();
         let cancel = CancelToken::new();
         s.running = Some((id, cancel.clone()));
         (id, cancel)
@@ -176,21 +177,15 @@ pub fn cancel_scan(state: State<'_, AppState>) {
     }
 }
 
-fn save_snapshot(scan: &Scan) -> bool {
-    let Some(dir) = cleaner_core::paths::default_data_dir().map(|d| d.join("snapshots")) else {
+pub(crate) fn save_snapshot(scan: &Scan) -> bool {
+    let Some(data) = cleaner_core::paths::default_data_dir() else {
         return false;
     };
-    let snap = Snapshot::from_scan(
-        scan,
-        snapshot::DEFAULT_MIN_FOLDER_SIZE,
-        snapshot::DEFAULT_MAX_DEPTH,
-    );
-    let saved = snapshot::save(&dir, &snap).is_ok();
-    let _ = snapshot::prune(&dir, snapshot::DEFAULT_RETENTION_DAYS, snap.taken_at);
-    saved
+    let days = Settings::load(&data).snapshot_days;
+    snapshot::record(&data, scan, days).is_ok()
 }
 
-fn loaded(state: &AppState, scan_id: u64) -> CmdResult<Arc<LoadedScan>> {
+pub(crate) fn loaded(state: &AppState, scan_id: u64) -> CmdResult<Arc<LoadedScan>> {
     match &state.lock().current {
         Some(s) if s.id == scan_id => Ok(Arc::clone(s)),
         _ => Err("That scan is no longer loaded. Please scan again.".into()),
@@ -216,10 +211,34 @@ pub struct NodeView {
     modified: i64,
     flags: u16,
     child_count: usize,
+    /// The safety guard never lets the cleaner touch this item.
+    protected: bool,
+    /// On the user's exclusions list.
+    excluded: bool,
 }
 
-fn view(tree: &Tree, id: NodeId) -> NodeView {
+/// What the Disk view shows about whether items may be cleaned.
+struct Marks {
+    guard: &'static Guard,
+    exclusions: Exclusions,
+}
+
+impl Marks {
+    fn load() -> Marks {
+        static GUARD: OnceLock<Guard> = OnceLock::new();
+        let exclusions = cleaner_core::paths::default_data_dir()
+            .map(|d| Exclusions::new(&Settings::load(&d).exclusions))
+            .unwrap_or_default();
+        Marks {
+            guard: GUARD.get_or_init(Guard::system),
+            exclusions,
+        }
+    }
+}
+
+fn view(tree: &Tree, id: NodeId, marks: &Marks) -> NodeView {
     let n = tree.node(id);
+    let path = tree.path(id);
     NodeView {
         id,
         name: tree.name(id).into_owned(),
@@ -231,6 +250,8 @@ fn view(tree: &Tree, id: NodeId) -> NodeView {
         modified: n.modified(),
         flags: n.flags(),
         child_count: n.child_count(),
+        protected: marks.guard.check(&path).is_err(),
+        excluded: marks.exclusions.is_excluded(&path),
     }
 }
 
@@ -260,7 +281,7 @@ pub fn get_node(
     let tree = &loaded.scan.tree;
     check_node(tree, node_id)?;
     Ok(NodeDetail {
-        node: view(tree, node_id),
+        node: view(tree, node_id, &Marks::load()),
         path: tree.path(node_id).display().to_string(),
         lineage: tree
             .lineage(node_id)
@@ -332,9 +353,13 @@ pub fn list_children(
         .saturating_add(limit.min(MAX_PAGE) as usize)
         .min(total);
     let rest = &ids[end..];
+    let marks = Marks::load();
     Ok(ChildrenPage {
         total,
-        items: ids[start..end].iter().map(|&c| view(tree, c)).collect(),
+        items: ids[start..end]
+            .iter()
+            .map(|&c| view(tree, c, &marks))
+            .collect(),
         rest_count: rest.len(),
         rest_size: rest.iter().map(|&c| tree.node(c).size()).sum(),
     })
@@ -403,6 +428,18 @@ pub fn treemap(
     ))
 }
 
+/// Finds a path in a Disk scan (for "Show in Disk" links). Read-only.
+#[tauri::command(async)]
+pub fn locate_node(
+    state: State<'_, AppState>,
+    scan_id: u64,
+    path: String,
+) -> CmdResult<Option<NodeId>> {
+    let path = validate_scan_path(&path)?;
+    let loaded = loaded(&state, scan_id)?;
+    Ok(loaded.scan.tree.find(&path))
+}
+
 /// Shows the item selected in File Explorer.
 #[tauri::command(async)]
 pub fn open_in_explorer(
@@ -442,6 +479,29 @@ fn reveal(path: &Path) -> CmdResult<()> {
 #[cfg(not(windows))]
 fn reveal(_path: &Path) -> CmdResult<()> {
     Err("Showing items in File Explorer is only available on Windows.".into())
+}
+
+/// Opens a folder in File Explorer.
+#[cfg(windows)]
+pub(crate) fn open_folder(path: &Path) -> CmdResult<()> {
+    use std::os::windows::process::CommandExt;
+    let display = path.display().to_string();
+    if display.contains('"') {
+        return Err("That folder can't be opened.".into());
+    }
+    let explorer = platform::windows_dir()
+        .map(|w| w.join("explorer.exe"))
+        .ok_or_else(|| "Could not find File Explorer.".to_string())?;
+    std::process::Command::new(explorer)
+        .raw_arg(format!("\"{display}\""))
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Could not open File Explorer: {e}"))
+}
+
+#[cfg(not(windows))]
+pub(crate) fn open_folder(_path: &Path) -> CmdResult<()> {
+    Err("Opening folders is only available on Windows.".into())
 }
 
 /// Restarts the app with administrator rights (one UAC prompt), which

@@ -12,6 +12,9 @@ coverage/
 *.profdata
 # Tauri regenerates these from tauri.conf.json and capabilities/ at build time
 **/src-tauri/gen/
+# The CLI, scheduled cleaner, and tray, staged for the installer by
+# scripts/build-installer.ps1
+app/src-tauri/binaries/
 
 # ---------------------------------------------------------------------------
 # Release artifacts (only produced by CI release workflows, never committed)

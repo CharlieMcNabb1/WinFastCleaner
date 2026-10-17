@@ -12,8 +12,11 @@
     folderSize,
     driveTotal,
     canReveal,
+    refreshKey,
     onOpen,
     onNotice,
+    onSendToCleaner,
+    onExclude,
   }: {
     api: Backend;
     scanId: number;
@@ -21,8 +24,12 @@
     folderSize: number;
     driveTotal: number | null;
     canReveal: boolean;
+    /** Changes when protected/excluded marks may have changed. */
+    refreshKey: number;
     onOpen: (id: number) => void;
     onNotice: (message: string) => void;
+    onSendToCleaner: (node: NodeView) => void;
+    onExclude: (node: NodeView) => void;
   } = $props();
 
   const PAGE = 300;
@@ -33,7 +40,10 @@
   let total = $state(0);
   let restCount = $state(0);
   let restSize = $state(0);
-  let menu = $state<{ x: number; y: number; node: NodeView } | null>(null);
+  let menu = $state<{ x: number; y: number } | null>(null);
+  // Kept separately so closing the menu never leaves its items without a
+  // target while they are torn down.
+  let menuNode = $state<NodeView | null>(null);
 
   // A new folder starts at the first page.
   let lastFolder = -1;
@@ -45,6 +55,7 @@
   });
 
   $effect(() => {
+    void refreshKey;
     const query = { offset: 0, limit, sort, descending, dirsOnly: false };
     const [scan, id] = [scanId, nodeId];
     api
@@ -87,8 +98,9 @@
     ev.preventDefault();
     // Keep the menu inside the window.
     const x = Math.max(4, Math.min(ev.clientX, window.innerWidth - 230));
-    const y = Math.max(4, Math.min(ev.clientY, window.innerHeight - 130));
-    menu = { x, y, node };
+    const y = Math.max(4, Math.min(ev.clientY, window.innerHeight - 200));
+    menuNode = node;
+    menu = { x, y };
   }
 
   async function reveal(node: NodeView) {
@@ -110,6 +122,9 @@
       onNotice(errorMessage(e));
     }
   }
+
+  const PROTECTED_TIP = "Protected: Windows or the app needs this, so the cleaner never touches it.";
+  const EXCLUDED_TIP = "On your exclusions list: never cleaned.";
 
   function onKey(ev: KeyboardEvent) {
     if (ev.key === "Escape") menu = null;
@@ -156,6 +171,11 @@
               </span>
             {/if}
             <FlagBadges flags={node.flags} />
+            {#if node.protected}
+              <span class="mark" title={PROTECTED_TIP}><Icon name="lock" size={13} label={PROTECTED_TIP} /></span>
+            {:else if node.excluded}
+              <span class="mark" title={EXCLUDED_TIP}><Icon name="ban" size={13} label={EXCLUDED_TIP} /></span>
+            {/if}
             </div>
           </td>
           <td class="num">{formatSize(node.size)}</td>
@@ -197,8 +217,8 @@
   </table>
 </div>
 
-{#if menu}
-  {@const target = menu.node}
+{#if menu && menuNode}
+  {@const target = menuNode}
   <div class="menu" role="menu" style:left={`${menu.x}px`} style:top={`${menu.y}px`}>
     {#if target.isDir}
       <button role="menuitem" onclick={() => onOpen(target.id)}><Icon name="folderOpen" /> Open</button>
@@ -207,6 +227,28 @@
       <Icon name="external" /> Show in File Explorer
     </button>
     <button role="menuitem" onclick={() => copyPath(target)}><Icon name="copy" /> Copy path</button>
+    <hr />
+    <button
+      role="menuitem"
+      disabled={target.protected || target.excluded}
+      title={target.protected ? PROTECTED_TIP : target.excluded ? EXCLUDED_TIP : "Review and move it to the recovery bin"}
+      onclick={() => {
+        menu = null;
+        onSendToCleaner(target);
+      }}
+    >
+      <Icon name="sparkle" /> Send to cleaner…
+    </button>
+    <button
+      role="menuitem"
+      disabled={target.excluded}
+      onclick={() => {
+        menu = null;
+        onExclude(target);
+      }}
+    >
+      <Icon name="ban" /> {target.excluded ? "Already excluded" : "Add to exclusions"}
+    </button>
   </div>
 {/if}
 
@@ -220,6 +262,8 @@
   }
   table {
     width: 100%;
+    /* Below this the Name column would be squeezed; scroll instead. */
+    min-width: 820px;
     border-collapse: collapse;
     table-layout: fixed;
   }
@@ -358,5 +402,17 @@
   }
   .menu button:hover:not(:disabled) {
     background: var(--surface-2);
+  }
+  .menu hr {
+    width: 100%;
+    margin: 4px 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+  .mark {
+    display: inline-flex;
+    margin-left: 4px;
+    color: var(--text-2);
+    vertical-align: -2px;
   }
 </style>

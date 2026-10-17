@@ -83,10 +83,7 @@ pub fn scan(
     }
     let root =
         platform::simplify_path(std::fs::canonicalize(path).map_err(|e| Error::io(path, e))?);
-    let started_at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
+    let started_at = now_unix();
     let started = Instant::now();
     let counters = Counters::new();
     let finished = AtomicBool::new(false);
@@ -211,6 +208,14 @@ fn try_mft(_root: &Path, _counters: &Counters, _cancel: &CancelToken) -> Result<
     Err(MftSkip::Unavailable(
         "Fast MFT scan is only available on Windows".to_string(),
     ))
+}
+
+/// The current time as Unix seconds.
+pub fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 /// Returns the path a scan of `path` would use as its root.

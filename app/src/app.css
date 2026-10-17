@@ -1,4 +1,5 @@
-/* Design tokens. Light and dark themes follow the Windows setting. */
+/* Design tokens. Light and dark themes follow the Windows setting, unless the
+   user picks one in Settings (the data-theme attribute on <html>). */
 :root {
   color-scheme: light dark;
   --bg: #f5f6fa;
@@ -34,8 +35,10 @@
   --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
 }
 
+/* Dark tokens: used when Windows is dark (unless the user picked light in
+   Settings), or when the user picked dark. Keep the two blocks the same. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #111319;
     --surface: #181b23;
     --surface-2: #1f232d;
@@ -64,6 +67,39 @@
   }
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111319;
+  --surface: #181b23;
+  --surface-2: #1f232d;
+  --surface-3: #272c39;
+  --border: #2c3140;
+  --text: #e6e9f1;
+  --text-2: #9ba4b6;
+  --accent: #748ffc;
+  --accent-2: #1e2540;
+  --accent-text: #0d1020;
+  --focus: #91a7ff;
+  --bar: #748ffc;
+  --bar-track: #2a2f3d;
+  --notice-bg: #1a2135;
+  --notice-border: #33416b;
+  --alert-bg: #2a2214;
+  --alert-border: #5c4a24;
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%);
+
+  --tier-green: #69db7c;
+  --tier-green-bg: #13261a;
+  --tier-yellow: #ffc078;
+  --tier-yellow-bg: #2b2112;
+  --tier-red: #ff8787;
+  --tier-red-bg: #2c1515;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -72,6 +108,8 @@ html,
 body {
   margin: 0;
   height: 100%;
+  /* Only the panes (and the sidebar) scroll, never the whole window. */
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -168,4 +206,142 @@ button:disabled {
   height: 100%;
   border-radius: 3px;
   background: var(--bar);
+}
+
+/* Shared pieces for the Cleaner, Recover, and Settings tabs. */
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  padding: 16px 20px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.view-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.view-head h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.view-head p {
+  margin: 2px 0 0;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 12px 14px;
+}
+
+.notice,
+.alert {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--notice-border);
+  background: var(--notice-bg);
+}
+
+.notice > span,
+.alert > span {
+  flex: 1;
+}
+
+.alert {
+  border-color: var(--alert-border);
+  background: var(--alert-bg);
+}
+
+.btn.danger {
+  color: var(--tier-red);
+}
+
+.btn.danger.primary {
+  background: var(--tier-red);
+  border-color: var(--tier-red);
+  color: #fff;
+}
+
+.link-btn {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  padding: 0;
+  text-decoration: underline;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bar-track);
+  overflow: hidden;
+}
+
+.progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--bar);
+  transition: width 0.2s ease;
+}
+
+.progress-fill.indeterminate {
+  width: 30%;
+  animation: slide 1.2s ease-in-out infinite;
+}
+
+@keyframes slide {
+  from {
+    left: -30%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill.indeterminate {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+input[type="text"],
+input[type="number"] {
+  font: inherit;
+  color: inherit;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
 }

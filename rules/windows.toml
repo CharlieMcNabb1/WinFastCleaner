@@ -1,0 +1,135 @@
+# Built-in cleaning rules: Windows.
+# Format: docs/rule-format.md. Written from scratch for WinFastCleaner.
+
+[[rule]]
+id = "windows.user-temp"
+name = "Temporary files (your account)"
+group = "Windows"
+tier = "green"
+description = "Files that programs leave in your temporary folder while installing, updating, or running."
+lose = "Nothing. Programs recreate temporary files when they need them. Files from the last day are kept."
+paths = ['%TEMP%']
+min_age_days = 1
+
+[[rule]]
+id = "windows.system-temp"
+name = "Temporary files (Windows)"
+group = "Windows"
+tier = "green"
+description = "Files that Windows and installers leave in the Windows temporary folder."
+lose = "Nothing. Files from the last day are kept."
+paths = ['%SYSTEMROOT%\Temp']
+min_age_days = 1
+requires_admin = true
+
+[[rule]]
+id = "windows.thumbnail-cache"
+name = "Thumbnail cache"
+group = "Windows"
+tier = "green"
+description = "Small preview images File Explorer saves for pictures and videos."
+lose = "Nothing. Explorer rebuilds thumbnails as you browse. Files Explorer is using right now are skipped."
+paths = ['%LOCALAPPDATA%\Microsoft\Windows\Explorer']
+include = ['thumbcache_*.db']
+remove_empty_folders = false
+
+[[rule]]
+id = "windows.error-reports"
+name = "Error reports (your account)"
+group = "Windows"
+tier = "green"
+description = "Reports Windows collected after programs crashed or stopped responding."
+lose = "Nothing you use. The reports have already been sent or are no longer needed."
+paths = [
+    '%LOCALAPPDATA%\Microsoft\Windows\WER\ReportArchive',
+    '%LOCALAPPDATA%\Microsoft\Windows\WER\ReportQueue',
+]
+
+[[rule]]
+id = "windows.system-error-reports"
+name = "Error reports (Windows)"
+group = "Windows"
+tier = "green"
+description = "System-wide reports Windows collected after crashes."
+lose = "Nothing you use. The reports have already been sent or are no longer needed."
+paths = [
+    '%PROGRAMDATA%\Microsoft\Windows\WER\ReportArchive',
+    '%PROGRAMDATA%\Microsoft\Windows\WER\ReportQueue',
+    '%PROGRAMDATA%\Microsoft\Windows\WER\Temp',
+]
+requires_admin = true
+
+[[rule]]
+id = "windows.app-crash-dumps"
+name = "Program crash dumps"
+group = "Windows"
+tier = "green"
+description = "Memory snapshots saved when programs crashed."
+lose = "The ability to send these old crashes to a developer for debugging."
+paths = ['%LOCALAPPDATA%\CrashDumps']
+
+[[rule]]
+id = "windows.system-crash-dumps"
+name = "Windows crash dumps"
+group = "Windows"
+tier = "green"
+description = "Memory snapshots Windows saved after system crashes (blue screens)."
+lose = "The ability to investigate those old crashes."
+paths = [
+    '%SYSTEMROOT%\Minidump',
+    '%SYSTEMROOT%\LiveKernelReports',
+    '%SYSTEMROOT%\MEMORY.DMP',
+]
+requires_admin = true
+
+[[rule]]
+id = "windows.inet-cache"
+name = "Internet cache (Windows)"
+group = "Windows"
+tier = "green"
+description = "Web content cached by Windows components and apps that show web pages."
+lose = "Nothing. Pages load the content again the next time. Files in use are skipped."
+paths = ['%LOCALAPPDATA%\Microsoft\Windows\INetCache']
+remove_empty_folders = false
+
+[[rule]]
+id = "windows.directx-shader-cache"
+name = "DirectX shader cache"
+group = "Windows"
+tier = "yellow"
+description = "Graphics shaders Windows prepared for games and apps."
+lose = "Games and apps may load slower or stutter briefly while shaders are rebuilt."
+paths = ['%LOCALAPPDATA%\D3DSCache']
+
+[[rule]]
+id = "windows.delivery-optimization"
+name = "Delivery Optimization cache"
+group = "Windows"
+tier = "yellow"
+description = "Update files Windows keeps so it can share them with other PCs."
+lose = "Windows may download some update files again."
+paths = ['%SYSTEMROOT%\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache']
+requires_admin = true
+
+[[rule]]
+id = "windows.update-downloads"
+name = "Windows Update downloads"
+group = "Windows"
+tier = "yellow"
+description = "Update packages Windows downloaded. Files from the last 10 days are kept, so updates in progress are not affected."
+lose = "Windows may need to download some updates again."
+paths = ['%SYSTEMROOT%\SoftwareDistribution\Download']
+min_age_days = 10
+requires_admin = true
+
+[[rule]]
+id = "windows.logs"
+name = "Windows log files"
+group = "Windows"
+tier = "yellow"
+description = "Log files Windows wrote more than 30 days ago."
+lose = "Old logs that could help troubleshoot past problems."
+paths = ['%SYSTEMROOT%\Logs']
+include = ['**/*.log', '**/*.etl', '**/*.cab']
+min_age_days = 30
+requires_admin = true

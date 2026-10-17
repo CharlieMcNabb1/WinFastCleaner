@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/cli", "app/src-tauri"]
+members = ["crates/core", "crates/cli", "crates/tray", "app/src-tauri"]
 # `cargo test` at the root covers the platform-independent crates. CI always
 # passes `--workspace` so the desktop app is built and tested too.
-default-members = ["crates/core", "crates/cli"]
+default-members = ["crates/core", "crates/cli", "crates/tray"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,6 +14,8 @@ repository = "https://github.com/CharlieMcNabb1/WinFastCleaner"
 publish = false
 
 [workspace.dependencies]
+# `pure`: Rust SIMD code only, no C or assembly build step.
+blake3 = { version = "1.8", features = ["pure"] }
 cleaner-core = { path = "crates/core" }
 clap = { version = "4.6", features = ["derive"] }
 libc = "0.2"
@@ -22,7 +24,10 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3.27"
 thiserror = "2.0"
+toml = "1.1"
 windows-sys = "0.61"
+# COM (Task Scheduler, WMI, shell links). The same version Tauri already uses.
+windows = "0.62.2"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

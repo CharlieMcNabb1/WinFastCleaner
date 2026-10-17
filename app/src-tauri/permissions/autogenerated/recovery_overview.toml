@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-recovery-overview"
+description = "Enables the recovery_overview command without any pre-configured scope."
+commands.allow = ["recovery_overview"]
+
+[[permission]]
+identifier = "deny-recovery-overview"
+description = "Denies the recovery_overview command without any pre-configured scope."
+commands.deny = ["recovery_overview"]

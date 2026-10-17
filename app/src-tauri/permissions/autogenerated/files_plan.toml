@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-files-plan"
+description = "Enables the files_plan command without any pre-configured scope."
+commands.allow = ["files_plan"]
+
+[[permission]]
+identifier = "deny-files-plan"
+description = "Denies the files_plan command without any pre-configured scope."
+commands.deny = ["files_plan"]

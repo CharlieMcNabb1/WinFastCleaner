@@ -1,7 +1,10 @@
 //! `wfc`: command-line interface over `cleaner-core`.
 //!
-//! Phase 1 provides read-only commands (`drives`, `scan`). Cleaning commands
-//! with `--dry-run` arrive in Phase 2.
+//! `drives` and `scan` are read-only. `clean` always shows what it will do
+//! first (`--dry-run` stops there) and asks before changing anything.
+
+mod clean;
+mod files;
 
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
@@ -14,7 +17,7 @@ use cleaner_core::format::{format_size, percent};
 use cleaner_core::platform;
 use cleaner_core::progress::{CancelToken, ScanPhase, ScanProgress};
 use cleaner_core::scan::{Scan, ScanOptions, ScanSummary, scan};
-use cleaner_core::snapshot::{self, Snapshot};
+use cleaner_core::snapshot;
 use cleaner_core::tree::{NodeId, Tree, flags};
 
 #[derive(Parser, Debug)]
@@ -22,8 +25,9 @@ use cleaner_core::tree::{NodeId, Tree, flags};
     name = "wfc",
     version,
     about = "WinFastCleaner command-line tool",
-    long_about = "WinFastCleaner command-line tool.\n\nRead-only for now: scanning never \
-                  changes or deletes anything. No data ever leaves this machine."
+    long_about = "WinFastCleaner command-line tool.\n\nScanning never changes anything. \
+                  Cleaning shows exactly what it will do and asks first; protected \
+                  Windows files are never touched. No data ever leaves this machine."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -61,6 +65,35 @@ enum Command {
         #[arg(long, short)]
         quiet: bool,
     },
+    /// List or check cleaning rules.
+    #[command(subcommand)]
+    Rules(clean::RulesCommand),
+    /// Clean junk found by the rules (safe items by default).
+    Clean(clean::CleanArgs),
+    /// Look into, restore from, or empty the recovery bin.
+    #[command(subcommand)]
+    Recover(clean::RecoverCommand),
+    /// List large or old files (read-only).
+    #[command(subcommand)]
+    Find(files::FindCommand),
+    /// List files with identical contents (read-only).
+    Dupes(files::DupesArgs),
+    /// Show which folders grew or shrank between two scans.
+    Grew(files::GrewArgs),
+    /// List saved scan snapshots.
+    Snapshots {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove the scheduled cleaning task and the tray monitor's sign-in
+    /// entry, and close the tray (used by the uninstaller). Your settings,
+    /// logs, and recovery bin are kept.
+    #[command(hide = true)]
+    RemoveIntegration,
+    /// Close the tray monitor if it is running (used by the installer before
+    /// replacing its program).
+    #[command(hide = true)]
+    CloseTray,
 }
 
 fn main() -> ExitCode {
@@ -84,6 +117,21 @@ fn main() -> ExitCode {
             snapshot: !no_snapshot,
             quiet,
         }),
+        Command::Rules(cmd) => clean::rules_cmd(cmd),
+        Command::Clean(args) => clean::clean_cmd(args),
+        Command::Recover(cmd) => clean::recover_cmd(cmd),
+        Command::Find(cmd) => files::find_cmd(cmd),
+        Command::Dupes(args) => files::dupes_cmd(args),
+        Command::Grew(args) => files::grew_cmd(args),
+        Command::Snapshots { json } => files::snapshots_cmd(json),
+        Command::RemoveIntegration => remove_integration(),
+        Command::CloseTray => {
+            if cleaner_core::integration::close_tray() {
+                // Give it a moment to remove its icon and exit.
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+            Ok(())
+        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -94,7 +142,20 @@ fn main() -> ExitCode {
     }
 }
 
-type CliResult = Result<(), Box<dyn std::error::Error>>;
+pub(crate) type CliResult = Result<(), Box<dyn std::error::Error>>;
+
+fn remove_integration() -> CliResult {
+    let problems = cleaner_core::integration::remove_all();
+    for p in &problems {
+        eprintln!("warning: {p}");
+    }
+    if problems.is_empty() {
+        println!("Removed the scheduled cleaning task and the tray monitor's sign-in entry.");
+        Ok(())
+    } else {
+        Err("some parts could not be removed".into())
+    }
+}
 
 fn drives(json: bool) -> CliResult {
     let drives = platform::drives();
@@ -173,18 +234,13 @@ fn run_scan(args: ScanArgs) -> CliResult {
     Ok(())
 }
 
-fn save_snapshot(scan: &Scan, quiet: bool) {
-    let Some(dir) = cleaner_core::paths::default_data_dir().map(|d| d.join("snapshots")) else {
+pub(crate) fn save_snapshot(scan: &Scan, quiet: bool) {
+    let Some(data) = cleaner_core::paths::default_data_dir() else {
         return;
     };
-    let snap = Snapshot::from_scan(
-        scan,
-        snapshot::DEFAULT_MIN_FOLDER_SIZE,
-        snapshot::DEFAULT_MAX_DEPTH,
-    );
-    match snapshot::save(&dir, &snap) {
+    let days = cleaner_core::settings::Settings::load(&data).snapshot_days;
+    match snapshot::record(&data, scan, days) {
         Ok(path) => {
-            let _ = snapshot::prune(&dir, snapshot::DEFAULT_RETENTION_DAYS, snap.taken_at);
             if !quiet {
                 eprintln!("Snapshot saved: {}", path.display());
             }
@@ -378,20 +434,17 @@ fn print_json(scan: &Scan, top: usize, depth: usize) -> CliResult {
     Ok(())
 }
 
-/// 1234567 -> "1,234,567"
-fn group(n: u64) -> String {
-    let s = n.to_string();
-    let mut out = String::with_capacity(s.len() + s.len() / 3);
-    for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
+/// 1 -> "1 file", 1234 -> "1,234 files"
+pub(crate) fn files(n: u64) -> String {
+    format!("{} file{}", group(n), if n == 1 { "" } else { "s" })
 }
 
-fn truncate(s: &str, max: usize) -> String {
+/// 1234567 -> "1,234,567"
+pub(crate) fn group(n: u64) -> String {
+    cleaner_core::format::format_count(n)
+}
+
+pub(crate) fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()
     } else {
