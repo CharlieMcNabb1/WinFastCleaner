@@ -66,3 +66,6 @@ Check ($null -eq (Get-ItemProperty -Path $runKey -Name $runValue -ErrorAction Si
 Check ((Get-Content $marker) -eq 'keep me') 'data folder kept'
 Remove-Item $marker
 Write-Host 'Installer test passed.'
+# The last native command (schtasks /Query, expected to fail) must not
+# become the script's exit code.
+exit 0
