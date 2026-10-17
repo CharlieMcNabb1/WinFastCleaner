@@ -303,6 +303,19 @@ fn clean_then_restore_round_trip() {
 }
 
 #[test]
+fn secure_clean_overwrites_and_skips_the_bin() {
+    let s = sandbox();
+    let out = s.clean(&["--tier", "yellow", "--yes", "--secure", "--json"]);
+    let report: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    assert_eq!(report["deletedCount"], 3, "{report}");
+    assert_eq!(report["wipedCount"], 3, "{report}");
+    assert_eq!(report["binnedCount"], 0, "{report}");
+    assert!(!s.exists("App/Logs/x.log"));
+    let out = s.wfc().args(["recover", "list"]).output().unwrap();
+    assert!(ok(&out).contains("empty"));
+}
+
+#[test]
 fn exclusions_win_over_rules() {
     let s = sandbox();
     let keep = s.local.join("App/Cache/a.bin");

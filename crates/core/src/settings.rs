@@ -67,6 +67,9 @@ pub struct Settings {
     pub bin: BinLimits,
     /// Keep scan snapshots (for "What grew") this many days.
     pub snapshot_days: u32,
+    /// Offer secure delete (overwrite before deleting) when cleaning and
+    /// when deleting from the recovery bin. Off by default.
+    pub secure_delete: bool,
 }
 
 impl Default for Settings {
@@ -76,6 +79,7 @@ impl Default for Settings {
             green_to_bin: false,
             bin: BinLimits::default(),
             snapshot_days: crate::snapshot::DEFAULT_RETENTION_DAYS,
+            secure_delete: false,
         }
     }
 }

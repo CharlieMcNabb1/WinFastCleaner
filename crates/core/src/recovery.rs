@@ -456,7 +456,7 @@ impl RecoveryStore {
         }
         let mut report = PurgeReport::default();
         for id in evict {
-            let r = self.delete_batch(&id)?;
+            let r = self.delete_batch(&id, false)?;
             report.batches += r.batches;
             report.files += r.files;
             report.bytes += r.bytes;
@@ -465,8 +465,9 @@ impl RecoveryStore {
         Ok(report)
     }
 
-    /// Permanently deletes one batch.
-    pub fn delete_batch(&self, batch_id: &str) -> Result<PurgeReport> {
+    /// Permanently deletes one batch. With `secure`, each file is
+    /// overwritten before it is deleted.
+    pub fn delete_batch(&self, batch_id: &str, secure: bool) -> Result<PurgeReport> {
         let batch =
             match self.with_index(|i| Ok(i.batches.iter().find(|b| b.id == batch_id).cloned()))? {
                 Some(b) => b,
@@ -480,7 +481,7 @@ impl RecoveryStore {
         let mut log_entries = Vec::new();
         let now = crate::scan::now_unix();
         for item in &batch.items {
-            match self.purge_file(&item.stored) {
+            match self.purge_file(&item.stored, secure) {
                 Ok(()) => {
                     report.files += 1;
                     report.bytes += item.size;
@@ -506,7 +507,11 @@ impl RecoveryStore {
             .map(|(p, size, tier)| log::Entry {
                 time: now,
                 batch: Some(batch_id),
-                action: Action::Purged,
+                action: if secure {
+                    Action::Wiped
+                } else {
+                    Action::Purged
+                },
                 tier: Some(*tier),
                 path: p,
                 size: *size,
@@ -517,13 +522,14 @@ impl RecoveryStore {
         Ok(report)
     }
 
-    /// Permanently deletes everything in the bin.
-    pub fn empty(&self) -> Result<PurgeReport> {
+    /// Permanently deletes everything in the bin (overwriting each file
+    /// first with `secure`).
+    pub fn empty(&self, secure: bool) -> Result<PurgeReport> {
         let ids: Vec<String> =
             self.with_index(|i| Ok(i.batches.iter().map(|b| b.id.clone()).collect()))?;
         let mut report = PurgeReport::default();
         for id in ids {
-            let r = self.delete_batch(&id)?;
+            let r = self.delete_batch(&id, secure)?;
             report.batches += r.batches;
             report.files += r.files;
             report.bytes += r.bytes;
@@ -534,14 +540,21 @@ impl RecoveryStore {
 
     /// Deletes a file inside the bin: never follows links and never acts
     /// outside the bin.
-    fn purge_file(&self, stored: &Path) -> std::io::Result<()> {
-        let h = fsops::open(stored)?;
+    fn purge_file(&self, stored: &Path, secure: bool) -> std::io::Result<()> {
+        let h = if secure {
+            fsops::open_for_wipe(stored)?
+        } else {
+            fsops::open(stored)?
+        };
         let info = h.info()?;
         let fin = h.final_path()?;
         let bin = self.bin_dir_for(stored).map_err(std::io::Error::other)?;
         let bin = std::fs::canonicalize(&bin).unwrap_or(bin);
         if info.is_dir || info.is_special || !Guard::is_within(&fin, &bin) {
             return Err(std::io::Error::other("not a file in the recovery bin"));
+        }
+        if secure {
+            h.wipe()?;
         }
         h.delete()
     }
@@ -1171,10 +1184,11 @@ mod tests {
         let id = bin_files(&f, &[a], 1_000);
         let b = put(&f, "b.txt", b"bb");
         bin_files(&f, &[b], 2_000);
-        let r = f.store.delete_batch(&id).unwrap();
+        let r = f.store.delete_batch(&id, false).unwrap();
         assert_eq!((r.files, r.bytes), (1, 4));
-        let r = f.store.empty().unwrap();
-        assert_eq!(r.files, 1);
+        // Secure: overwritten, then deleted.
+        let r = f.store.empty(true).unwrap();
+        assert_eq!((r.files, r.failed), (1, 0));
         assert!(f.store.list().unwrap().is_empty());
         let leftovers = std::fs::read_dir(f.tmp.path().join("bin/test"))
             .unwrap()
@@ -1193,9 +1207,15 @@ mod tests {
         let stored = f.store.batch(&id).unwrap().items[0].stored.clone();
         std::fs::remove_file(&stored).unwrap();
         std::os::unix::fs::symlink(&outside, &stored).unwrap();
-        let r = f.store.delete_batch(&id).unwrap();
-        assert_eq!(r.failed, 1);
-        assert_eq!(std::fs::read(&outside).unwrap(), b"keep me");
+        for secure in [true, false] {
+            let r = f.store.delete_batch(&id, secure).unwrap();
+            assert_eq!(r.failed, 1);
+            assert_eq!(
+                std::fs::read(&outside).unwrap(),
+                b"keep me",
+                "never overwritten through a link"
+            );
+        }
     }
 
     #[test]

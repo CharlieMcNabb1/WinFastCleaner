@@ -18,6 +18,7 @@ pub mod log;
 pub mod mft;
 pub mod paths;
 pub mod platform;
+pub mod privacy;
 pub mod process;
 pub mod progress;
 pub mod recovery;
