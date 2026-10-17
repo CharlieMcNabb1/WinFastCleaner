@@ -19,6 +19,7 @@ use tauri::{AppHandle, Manager, State};
 use cleaner_core::cleaner::{
     self, CleanPlan, CleanReport, Context, ExecOptions, PlanItem, Rejected, RuleStatus,
 };
+use cleaner_core::health::{self, JunkSummary};
 use cleaner_core::progress::CancelToken;
 use cleaner_core::recovery::RecoveryStore;
 use cleaner_core::rules::{self, RuleError, RuleSource, Tier};
@@ -154,6 +155,10 @@ pub fn start_junk_scan(
                 );
                 let mut scan = cleaner::scan(&set.rules, &ctx, &cancel);
                 scan.errors = set.errors;
+                if !cancel.is_cancelled() {
+                    // For the health check and the tray.
+                    let _ = health::save_junk(&data, &JunkSummary::from_scan(&scan));
+                }
                 Ok((scan, ctx.elevated))
             }));
             let state = app.state::<AppState>();
@@ -452,8 +457,12 @@ pub fn clean_execute(
     app: AppHandle,
     state: State<'_, AppState>,
     plan_id: u64,
+    secure: bool,
     on_event: Channel<CleanEvent>,
 ) -> CmdResult<()> {
+    if secure && !Settings::load(&data_dir()?).secure_delete {
+        return Err("Secure delete is turned off in Settings.".into());
+    }
     let (previewed, cancel) = {
         let mut s = state.lock();
         if s.cleaning.is_some() {
@@ -482,6 +491,8 @@ pub fn clean_execute(
                 let opts = ExecOptions {
                     green_to_bin: previewed.green_to_bin,
                     label: previewed.label.to_string(),
+                    // Red items still go to the bin (enforced in core).
+                    secure,
                 };
                 let progress = |done: u64, total: u64| {
                     let _ = on_event.send(CleanEvent::Progress { done, total });

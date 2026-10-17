@@ -12,6 +12,7 @@ use cleaner_core::format::{format_size, unix_to_utc};
 use cleaner_core::progress::CancelToken;
 use cleaner_core::recovery::{Conflict, RecoveryStore};
 use cleaner_core::rules::{self, Rule, RuleError, RuleSet, Tier};
+use cleaner_core::schedule;
 use cleaner_core::settings::{Exclusions, Settings};
 
 use crate::{CliResult, files, group, truncate};
@@ -59,6 +60,10 @@ pub struct CleanArgs {
     /// Clean without asking first.
     #[arg(long, short = 'y')]
     yes: bool,
+    /// Secure delete: overwrite files before deleting them. Slower, skips
+    /// the recovery bin, and less effective on SSDs.
+    #[arg(long)]
+    secure: bool,
     /// Use only the rules in this folder (no built-in rules). Handy for
     /// trying out your own rules.
     #[arg(long, value_name = "DIR")]
@@ -66,6 +71,10 @@ pub struct CleanArgs {
     /// Print JSON instead of text.
     #[arg(long)]
     json: bool,
+    /// Run the scheduled cleaning now, as set up in the app's Settings (what
+    /// the scheduled task runs). Never asks; never cleans review items.
+    #[arg(long, conflicts_with_all = ["rules", "dry_run", "list", "yes", "secure"])]
+    scheduled: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -107,12 +116,18 @@ pub enum RecoverCommand {
         /// Don't ask first.
         #[arg(long, short = 'y')]
         yes: bool,
+        /// Overwrite each file before deleting it.
+        #[arg(long)]
+        secure: bool,
     },
     /// Permanently delete everything in the recovery bin.
     Empty {
         /// Don't ask first.
         #[arg(long, short = 'y')]
         yes: bool,
+        /// Overwrite each file before deleting it.
+        #[arg(long)]
+        secure: bool,
     },
 }
 
@@ -280,6 +295,25 @@ fn print_scan(scan: &JunkScan) {
 
 pub fn clean_cmd(args: CleanArgs) -> CliResult {
     let data = data_dir()?;
+    if args.scheduled {
+        let last = schedule::run(&data, args.rules_dir.as_deref(), &CancelToken::new());
+        if args.json {
+            println!("{}", serde_json::to_string_pretty(&last)?);
+        } else {
+            println!("{}", last.message);
+            for n in &last.not_ready {
+                println!("  skipped {}: {}", n.rule, n.reason);
+            }
+            if let Some(b) = &last.batch_id {
+                println!("Undo with: wfc recover restore {b}");
+            }
+        }
+        return if last.ok {
+            Ok(())
+        } else {
+            Err(last.message.into())
+        };
+    }
     let settings = Settings::load(&data);
     let mut ctx = context(&settings);
     let set = load_rules(&ctx, &data, args.rules_dir.as_deref());
@@ -353,6 +387,12 @@ pub fn clean_cmd(args: CleanArgs) -> CliResult {
         }
         return Ok(());
     }
+    if args.secure && !args.json {
+        println!(
+            "Secure delete: files are overwritten before they are deleted, so they can't be \
+             restored, not even from the recovery bin. On SSDs, old copies may survive."
+        );
+    }
     if !args.yes {
         let question = format!(
             "Clean {} ({})?",
@@ -372,6 +412,7 @@ pub fn clean_cmd(args: CleanArgs) -> CliResult {
     let opts = ExecOptions {
         green_to_bin: settings.green_to_bin,
         label: "Cleaner".into(),
+        secure: args.secure,
     };
     let report = cleaner::execute(
         &plan,
@@ -387,9 +428,14 @@ pub fn clean_cmd(args: CleanArgs) -> CliResult {
         return Ok(());
     }
     println!(
-        "Deleted {} ({}).",
+        "Deleted {} ({}){}.",
         files(report.deleted_count),
-        format_size(report.deleted_bytes)
+        format_size(report.deleted_bytes),
+        if report.wiped_count > 0 {
+            format!(", {} of them overwritten first", group(report.wiped_count))
+        } else {
+            String::new()
+        }
     );
     if report.binned_count > 0 {
         println!(
@@ -548,7 +594,7 @@ pub fn recover_cmd(cmd: RecoverCommand) -> CliResult {
             }
             Ok(())
         }
-        RecoverCommand::Delete { batch, yes } => {
+        RecoverCommand::Delete { batch, yes, secure } => {
             let b = store.batch(&batch)?;
             if !yes
                 && !confirm(&format!(
@@ -560,7 +606,7 @@ pub fn recover_cmd(cmd: RecoverCommand) -> CliResult {
                 println!("Nothing was changed.");
                 return Ok(());
             }
-            let r = store.delete_batch(&batch)?;
+            let r = store.delete_batch(&batch, secure)?;
             println!(
                 "Permanently deleted {} ({}).",
                 files(r.files),
@@ -574,7 +620,7 @@ pub fn recover_cmd(cmd: RecoverCommand) -> CliResult {
             }
             Ok(())
         }
-        RecoverCommand::Empty { yes } => {
+        RecoverCommand::Empty { yes, secure } => {
             let list = store.list()?;
             if list.is_empty() {
                 println!("The recovery bin is already empty.");
@@ -592,7 +638,7 @@ pub fn recover_cmd(cmd: RecoverCommand) -> CliResult {
                 println!("Nothing was changed.");
                 return Ok(());
             }
-            let r = store.empty()?;
+            let r = store.empty(secure)?;
             println!(
                 "Permanently deleted {} ({}).",
                 files(r.files),

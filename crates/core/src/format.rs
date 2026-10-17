@@ -17,6 +17,19 @@ pub fn format_size(bytes: u64) -> String {
     format!("{value:.1} {}", UNITS[unit])
 }
 
+/// Formats a count with thousands separators, for example `1,382`.
+pub fn format_count(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// `part` as a percentage of `whole` (0 when `whole` is 0).
 pub fn percent(part: u64, whole: u64) -> f64 {
     if whole == 0 {

@@ -303,6 +303,19 @@ fn clean_then_restore_round_trip() {
 }
 
 #[test]
+fn secure_clean_overwrites_and_skips_the_bin() {
+    let s = sandbox();
+    let out = s.clean(&["--tier", "yellow", "--yes", "--secure", "--json"]);
+    let report: serde_json::Value = serde_json::from_str(&ok(&out)).unwrap();
+    assert_eq!(report["deletedCount"], 3, "{report}");
+    assert_eq!(report["wipedCount"], 3, "{report}");
+    assert_eq!(report["binnedCount"], 0, "{report}");
+    assert!(!s.exists("App/Logs/x.log"));
+    let out = s.wfc().args(["recover", "list"]).output().unwrap();
+    assert!(ok(&out).contains("empty"));
+}
+
+#[test]
 fn exclusions_win_over_rules() {
     let s = sandbox();
     let keep = s.local.join("App/Cache/a.bin");
@@ -474,4 +487,141 @@ fn grew_lists_the_folder_that_grew() {
     assert_eq!(grew[0].1, 900 << 20);
     assert!(grew[1].0.ends_with("new-game"), "{grew:?}");
     assert_eq!(v["totalDelta"], 1100 << 20);
+}
+
+// ---------------------------------------------------------------- scheduled
+
+/// Turns on scheduled cleaning in the sandbox's settings.
+fn enable_schedule(s: &Sandbox, extra: &str) {
+    let data = s.local.join("WinFastCleaner");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(
+        data.join("settings.json"),
+        format!(r#"{{"schedule": {{"enabled": true{extra}}}}}"#),
+    )
+    .unwrap();
+}
+
+fn last_run(s: &Sandbox) -> serde_json::Value {
+    let text = std::fs::read_to_string(s.local.join("WinFastCleaner/scheduled-last.json")).unwrap();
+    serde_json::from_str(&text).unwrap()
+}
+
+#[test]
+fn scheduled_cleaning_takes_safe_items_only() {
+    let s = sandbox();
+    let run = || {
+        s.wfc()
+            .args(["clean", "--scheduled", "--rules-dir"])
+            .arg(&s.rules)
+            .output()
+            .unwrap()
+    };
+    // Turned off (the default): nothing is touched.
+    assert!(ok(&run()).contains("turned off"));
+    assert!(s.exists("App/Cache/a.bin"));
+
+    enable_schedule(&s, "");
+    let text = ok(&run());
+    assert!(text.contains("Cleaned"), "{text}");
+    assert!(!s.exists("App/Cache/a.bin") && !s.exists("App/Cache/sub/b.bin"));
+    // Optional (yellow) items are only cleaned when the schedule says so.
+    assert!(s.exists("App/Logs/x.log"));
+    let last = last_run(&s);
+    assert_eq!(last["ok"], true);
+    assert_eq!(last["deletedCount"], 2);
+    assert_eq!(last["binnedCount"], 0);
+
+    // --scheduled can't be combined with choices of its own.
+    let out = s
+        .wfc()
+        .args(["clean", "--scheduled", "--yes"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+}
+
+#[test]
+fn windowless_cleaner_only_runs_the_schedule() {
+    let s = sandbox();
+    let wfcw = || {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_wfcw"));
+        c.env("LOCALAPPDATA", &s.local)
+            .env("XDG_DATA_HOME", &s.local)
+            .stdin(std::process::Stdio::null());
+        c
+    };
+    for bad in [
+        &["clean"][..],
+        &["clean", "--tier", "yellow", "--yes"],
+        &["recover", "empty", "--yes"],
+        &["clean", "--scheduled", "--yes"],
+    ] {
+        assert_eq!(
+            wfcw().args(bad).status().unwrap().code(),
+            Some(2),
+            "{bad:?}"
+        );
+    }
+    assert!(s.exists("App/Cache/a.bin"));
+
+    enable_schedule(&s, r#", "includeOptional": true"#);
+    let st = wfcw()
+        .args(["clean", "--scheduled", "--rules-dir"])
+        .arg(&s.rules)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    assert!(!s.exists("App/Cache/a.bin"));
+    // The optional log went to the recovery bin; the rule's other file stays.
+    assert!(!s.exists("App/Logs/x.log"));
+    assert!(s.exists("App/Logs/keep.txt"));
+    let last = last_run(&s);
+    assert_eq!(last["deletedCount"], 2);
+    assert_eq!(last["binnedCount"], 1);
+}
+
+/// Registers a real Task Scheduler task (in a throwaway folder), runs it, and
+/// checks it cleaned the sandbox's safe items only. The task sets the sandbox
+/// as %LOCALAPPDATA%, as the other tests do, and uses the test rules.
+#[cfg(windows)]
+#[test]
+fn a_scheduled_task_runs_and_cleans_safe_items_only() {
+    use cleaner_core::schedule::{self, Schedule};
+    use cleaner_core::wincom;
+
+    let s = sandbox();
+    enable_schedule(&s, "");
+    let folder = format!(r"\WinFastCleaner-test-{}", std::process::id());
+    let cmd =
+        std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join(r"System32\cmd.exe");
+    let args = format!(
+        r#"/d /s /c "set "LOCALAPPDATA={}" && "{}" clean --scheduled --rules-dir "{}"""#,
+        s.local.display(),
+        env!("CARGO_BIN_EXE_wfcw"),
+        s.rules.display()
+    );
+    let xml = schedule::task_xml(
+        &Schedule {
+            enabled: true,
+            ..Schedule::default()
+        },
+        &cmd,
+        &args,
+    );
+    wincom::register_task(&folder, "run", &xml).unwrap();
+    let ran = wincom::run_task(&folder, "run");
+    let last = s.local.join("WinFastCleaner/scheduled-last.json");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+    while ran.is_ok() && !last.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    // Let the run finish writing before cleaning up.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    wincom::delete_task(&folder, "run").unwrap();
+    ran.unwrap();
+    assert!(last.exists(), "the task didn't run");
+    assert!(!s.exists("App/Cache/a.bin") && !s.exists("App/Cache/sub/b.bin"));
+    assert!(s.exists("App/Logs/x.log"));
+    assert_eq!(last_run(&s)["deletedCount"], 2);
 }

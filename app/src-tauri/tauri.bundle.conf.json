@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "WinFastCleaner contributors",
+    "copyright": "Copyright (c) WinFastCleaner contributors. MIT License.",
+    "license": "MIT",
+    "category": "Utility",
+    "shortDescription": "Fast, safe, transparent disk cleaner and system health tool",
+    "longDescription": "WinFastCleaner shows what takes up space, cleans junk by readable rules with a recovery bin, and checks your PC's health. No ads, no telemetry, works offline.",
+    "externalBin": ["binaries/wfc", "binaries/wfcw", "binaries/wfc-tray"],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "installerHooks": "windows/hooks.nsh",
+        "displayLanguageSelector": false
+      }
+    }
+  }
+}

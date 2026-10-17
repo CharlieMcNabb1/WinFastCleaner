@@ -5,37 +5,59 @@
   import DiskView from "./components/DiskView.svelte";
   import FilesView from "./components/FilesView.svelte";
   import GrewView from "./components/GrewView.svelte";
+  import HomeView from "./components/HomeView.svelte";
   import Icon, { type IconName } from "./components/Icon.svelte";
+  import PrivacyView from "./components/PrivacyView.svelte";
   import RecoverView from "./components/RecoverView.svelte";
   import SettingsView from "./components/SettingsView.svelte";
+  import StartupView from "./components/StartupView.svelte";
+  import UpdatesView from "./components/UpdatesView.svelte";
   import { backend } from "./lib/backend.ts";
-  import type { AppInfo } from "./lib/types.ts";
+  import { applyTheme } from "./lib/theme.svelte.ts";
+  import type { AppInfo, CleanerFocus } from "./lib/types.ts";
 
-  type Tab = "disk" | "cleaner" | "files" | "grew" | "recover" | "settings";
+  type Tab =
+    | "home"
+    | "disk"
+    | "cleaner"
+    | "privacy"
+    | "files"
+    | "grew"
+    | "startup"
+    | "updates"
+    | "recover"
+    | "settings";
   const TABS: { id: Tab; label: string; icon: IconName }[] = [
+    { id: "home", label: "Home", icon: "home" },
     { id: "disk", label: "Disk", icon: "drive" },
     { id: "cleaner", label: "Cleaner", icon: "sparkle" },
+    { id: "privacy", label: "Privacy", icon: "shield" },
     { id: "files", label: "Files", icon: "file" },
     { id: "grew", label: "What grew", icon: "trend" },
+    { id: "startup", label: "Startup", icon: "power" },
+    { id: "updates", label: "Updates", icon: "download" },
     { id: "recover", label: "Recover", icon: "restore" },
     { id: "settings", label: "Settings", icon: "sliders" },
   ];
 
   let info = $state<AppInfo | null>(null);
-  let tab = $state<Tab>("disk");
+  let tab = $state<Tab>("home");
   // Tabs stay alive once opened, so long operations keep running while the
-  // user browses elsewhere.
-  let opened = $state<Set<Tab>>(new Set(["disk"]));
+  // user browses elsewhere. The Disk tab is always alive: it scans the
+  // system drive on launch, and Home shows the results.
+  let opened = $state<Set<Tab>>(new Set(["home", "disk"]));
 
   function go(t: Tab) {
     tab = t;
     if (!opened.has(t)) opened = new Set([...opened, t]);
   }
 
-  // Cross-tab links from "What grew".
+  // Cross-tab links (from Home and "What grew").
   let seq = 0;
   let diskTarget = $state<{ path: string; root: string; seq: number } | null>(null);
-  let cleanerFocus = $state<{ ruleId: string; seq: number } | null>(null);
+  let cleanerFocus = $state<CleanerFocus | null>(null);
+  /** Bumped when a Disk scan finishes, so Home can refresh. */
+  let diskScans = $state(0);
 
   function showInDisk(path: string, root: string) {
     diskTarget = { path, root, seq: ++seq };
@@ -43,13 +65,24 @@
   }
 
   function openRule(ruleId: string) {
-    cleanerFocus = { ruleId, seq: ++seq };
+    cleanerFocus = { kind: "rule", ruleId, seq: ++seq };
+    go("cleaner");
+  }
+
+  function cleanSafe() {
+    cleanerFocus = { kind: "safe", seq: ++seq };
     go("cleaner");
   }
 
   onMount(async () => {
+    const api = await backend();
     try {
-      info = await (await backend()).appInfo();
+      applyTheme((await api.getSettings()).settings.theme);
+    } catch {
+      // Keep following Windows.
+    }
+    try {
+      info = await api.appInfo();
     } catch {
       info = null;
     }
@@ -84,11 +117,25 @@
     </div>
   </nav>
   <main>
-    <div class="pane" hidden={tab !== "disk"}><DiskView {info} target={diskTarget} onNavigate={go} /></div>
+    <div class="pane" hidden={tab !== "home"}>
+      <HomeView
+        active={tab === "home"}
+        {diskScans}
+        onNavigate={go}
+        onCleanSafe={cleanSafe}
+        onShowInDisk={showInDisk}
+      />
+    </div>
+    <div class="pane" hidden={tab !== "disk"}>
+      <DiskView {info} target={diskTarget} onNavigate={go} onScanned={() => diskScans++} />
+    </div>
     {#if opened.has("cleaner")}
       <div class="pane" hidden={tab !== "cleaner"}>
         <CleanerView {info} active={tab === "cleaner"} focus={cleanerFocus} onNavigate={go} />
       </div>
+    {/if}
+    {#if opened.has("privacy")}
+      <div class="pane" hidden={tab !== "privacy"}><PrivacyView active={tab === "privacy"} /></div>
     {/if}
     {#if opened.has("files")}
       <div class="pane" hidden={tab !== "files"}><FilesView active={tab === "files"} onNavigate={go} /></div>
@@ -98,11 +145,19 @@
         <GrewView active={tab === "grew"} onShowInDisk={showInDisk} onOpenRule={openRule} />
       </div>
     {/if}
+    {#if opened.has("startup")}
+      <div class="pane" hidden={tab !== "startup"}><StartupView {info} active={tab === "startup"} /></div>
+    {/if}
+    {#if opened.has("updates")}
+      <div class="pane" hidden={tab !== "updates"}><UpdatesView active={tab === "updates"} /></div>
+    {/if}
     {#if opened.has("recover")}
       <div class="pane" hidden={tab !== "recover"}><RecoverView active={tab === "recover"} /></div>
     {/if}
     {#if opened.has("settings")}
-      <div class="pane" hidden={tab !== "settings"}><SettingsView {info} active={tab === "settings"} /></div>
+      <div class="pane" hidden={tab !== "settings"}>
+        <SettingsView {info} active={tab === "settings"} onNavigate={go} />
+      </div>
     {/if}
   </main>
 </div>
@@ -117,6 +172,8 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-height: 0;
+    overflow-y: auto;
     padding: 16px 10px;
     border-right: 1px solid var(--border);
     background: var(--surface);

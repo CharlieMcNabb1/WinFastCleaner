@@ -12,6 +12,12 @@ publish.workspace = true
 name = "wfc"
 path = "src/main.rs"
 
+# The same scheduled clean as `wfc clean --scheduled`, without a console
+# window, for Windows Task Scheduler.
+[[bin]]
+name = "wfcw"
+path = "src/wfcw.rs"
+
 [dependencies]
 cleaner-core.workspace = true
 clap.workspace = true

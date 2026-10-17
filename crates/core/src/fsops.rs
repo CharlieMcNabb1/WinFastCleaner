@@ -46,6 +46,14 @@ pub fn open(path: &Path) -> io::Result<Opened> {
     })
 }
 
+/// Like [`open`], but also allows overwriting the file's contents
+/// ([`Opened::wipe`]) for secure delete.
+pub fn open_for_wipe(path: &Path) -> io::Result<Opened> {
+    Ok(Opened {
+        inner: imp::Handle::open_writable(path)?,
+    })
+}
+
 impl Opened {
     pub fn info(&self) -> io::Result<ItemInfo> {
         self.inner.info()
@@ -54,6 +62,15 @@ impl Opened {
     /// The item's real location, resolved by the file system.
     pub fn final_path(&self) -> io::Result<PathBuf> {
         self.inner.final_path()
+    }
+
+    /// Overwrites the whole file with zeros and flushes it to disk, through
+    /// the same handle (only for items opened with [`open_for_wipe`]).
+    ///
+    /// On SSDs, wear leveling may keep old copies of the data elsewhere, so
+    /// this is best effort there.
+    pub fn wipe(&self) -> io::Result<()> {
+        self.inner.wipe()
     }
 
     /// Deletes the item (a file, or an empty folder).
@@ -144,6 +161,22 @@ mod read_imp {
     }
 }
 
+/// Writes `len` zero bytes from the start of `file` and flushes them.
+fn overwrite(file: &std::fs::File, len: u64) -> io::Result<()> {
+    use std::io::{Seek, SeekFrom, Write};
+    let mut f = file;
+    f.seek(SeekFrom::Start(0))?;
+    let zeros = vec![0u8; 1024 * 1024];
+    let mut left = len;
+    while left > 0 {
+        let n = left.min(zeros.len() as u64) as usize;
+        f.write_all(&zeros[..n])?;
+        left -= n as u64;
+    }
+    f.flush()?;
+    file.sync_all()
+}
+
 /// Short reason for an I/O error, for "skipped" lists.
 pub fn describe_error(e: &io::Error) -> String {
     #[cfg(windows)]
@@ -204,6 +237,25 @@ mod imp {
                 .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
                 .open(path)?;
             Ok(Handle { file })
+        }
+
+        pub fn open_writable(path: &Path) -> io::Result<Handle> {
+            const GENERIC_WRITE: u32 = 0x4000_0000;
+            let file = std::fs::OpenOptions::new()
+                .access_mode(GENERIC_WRITE | DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE)
+                // Nobody else may write while the file is overwritten.
+                .share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE)
+                .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+                .open(path)?;
+            Ok(Handle { file })
+        }
+
+        pub fn wipe(&self) -> io::Result<()> {
+            let info = self.info()?;
+            if info.is_dir || info.is_special || info.is_cloud {
+                return Err(io::Error::other("only regular files can be overwritten"));
+            }
+            super::overwrite(&self.file, info.size)
         }
 
         pub fn info(&self) -> io::Result<ItemInfo> {
@@ -372,6 +424,23 @@ mod imp {
             })
         }
 
+        pub fn open_writable(path: &Path) -> io::Result<Handle> {
+            Handle::open(path)
+        }
+
+        pub fn wipe(&self) -> io::Result<()> {
+            use std::os::unix::fs::OpenOptionsExt;
+            let f = std::fs::OpenOptions::new()
+                .write(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&self.path)?;
+            let md = f.metadata()?;
+            if md.dev() != self.dev || md.ino() != self.ino || !md.is_file() {
+                return Err(io::Error::other("item changed while being processed"));
+            }
+            super::overwrite(&f, md.len())
+        }
+
         fn current(&self) -> io::Result<std::fs::Metadata> {
             let md = std::fs::symlink_metadata(&self.path)?;
             if md.dev() != self.dev || md.ino() != self.ino {
@@ -457,6 +526,28 @@ mod tests {
 
         open(&b).unwrap().delete().unwrap();
         assert!(!b.exists());
+    }
+
+    #[test]
+    fn wipe_overwrites_in_place_then_delete_removes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("secret.txt");
+        let body = vec![0xA5u8; 3 * 1024 * 1024 + 17];
+        std::fs::write(&a, &body).unwrap();
+        let h = open_for_wipe(&a).unwrap();
+        h.wipe().unwrap();
+        drop(h);
+        let after = std::fs::read(&a).unwrap();
+        assert_eq!(after.len(), body.len(), "same length");
+        assert!(after.iter().all(|b| *b == 0), "contents overwritten");
+        let h = open_for_wipe(&a).unwrap();
+        h.wipe().unwrap();
+        h.delete().unwrap();
+        assert!(!a.exists());
+        assert!(
+            open_for_wipe(tmp.path()).and_then(|h| h.wipe()).is_err(),
+            "folders are refused"
+        );
     }
 
     #[test]

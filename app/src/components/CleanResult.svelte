@@ -27,7 +27,9 @@
   </p>
   <ul>
     {#if report.deletedCount > 0}
-      <li>Deleted {plural(report.deletedCount, "file")} ({formatSize(report.deletedBytes)}).</li>
+      <li>
+        Deleted {plural(report.deletedCount, "file")} ({formatSize(report.deletedBytes)}){#if report.wipedCount > 0}, {report.wipedCount.toLocaleString()} of them overwritten first (secure delete){/if}.
+      </li>
     {/if}
     {#if report.binnedCount > 0}
       <li>

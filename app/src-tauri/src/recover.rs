@@ -94,18 +94,28 @@ pub fn recovery_restore(
         .map_err(|e| e.to_string())
 }
 
+/// Secure delete is only used when the user turned it on in Settings.
+fn check_secure(secure: bool) -> CmdResult<()> {
+    if secure && !Settings::load(&data_dir()?).secure_delete {
+        return Err("Secure delete is turned off in Settings.".into());
+    }
+    Ok(())
+}
+
 #[tauri::command(async)]
-pub fn recovery_delete(batch_id: String) -> CmdResult<PurgeReport> {
+pub fn recovery_delete(batch_id: String, secure: bool) -> CmdResult<PurgeReport> {
     check_batch_id(&batch_id)?;
+    check_secure(secure)?;
     store()?
         .0
-        .delete_batch(&batch_id)
+        .delete_batch(&batch_id, secure)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
-pub fn recovery_empty() -> CmdResult<PurgeReport> {
-    store()?.0.empty().map_err(|e| e.to_string())
+pub fn recovery_empty(secure: bool) -> CmdResult<PurgeReport> {
+    check_secure(secure)?;
+    store()?.0.empty(secure).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

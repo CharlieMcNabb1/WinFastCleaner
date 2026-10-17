@@ -31,6 +31,11 @@
     plus: "M12 5v14M5 12h14",
     pattern: "M4 7h4M4 12h8M4 17h6M15 15l5 5M17.5 13.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z",
     trend: "M3 17l6-6 4 4 8-8M15 7h6v6",
+    home: "M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10",
+    power: "M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0",
+    download: "M12 4v11M7 10l5 5 5-5M4 20h16",
+    pulse: "M3 12h4l3-8 4 16 3-8h4",
+    help: "M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z",
   } as const;
 
   export type IconName = keyof typeof PATHS;

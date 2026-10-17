@@ -36,7 +36,8 @@
     result = null;
     running = { done: 0, total: 0 };
     try {
-      await api.cleanExecute(r.view.plan.planId, (e) => {
+      // Hand-picked (red) files always go to the bin: never secure delete.
+      await api.cleanExecute(r.view.plan.planId, false, (e) => {
         if (e.type === "progress") running = { done: e.done, total: e.total };
         else {
           running = null;

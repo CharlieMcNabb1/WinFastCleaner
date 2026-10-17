@@ -17,11 +17,14 @@
     info,
     target,
     onNavigate,
+    onScanned,
   }: {
     info: AppInfo | null;
     /** A folder to show (from "What grew"); `seq` changes on each request. */
     target: { path: string; root: string; seq: number } | null;
     onNavigate: (tab: "recover") => void;
+    /** Called when a scan finishes (it also saved a snapshot). */
+    onScanned?: () => void;
   } = $props();
 
   let api = $state<Backend | null>(null);
@@ -100,6 +103,7 @@
               if (p) void reveal(p, null);
             });
             void refreshDrives();
+            onScanned?.();
             break;
           case "cancelled":
             scanning = false;
