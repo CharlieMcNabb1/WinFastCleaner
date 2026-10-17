@@ -1,7 +1,9 @@
 //! `wfc`: command-line interface over `cleaner-core`.
 //!
-//! Phase 1 provides read-only commands (`drives`, `scan`). Cleaning commands
-//! with `--dry-run` arrive in Phase 2.
+//! `drives` and `scan` are read-only. `clean` always shows what it will do
+//! first (`--dry-run` stops there) and asks before changing anything.
+
+mod clean;
 
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
@@ -22,8 +24,9 @@ use cleaner_core::tree::{NodeId, Tree, flags};
     name = "wfc",
     version,
     about = "WinFastCleaner command-line tool",
-    long_about = "WinFastCleaner command-line tool.\n\nRead-only for now: scanning never \
-                  changes or deletes anything. No data ever leaves this machine."
+    long_about = "WinFastCleaner command-line tool.\n\nScanning never changes anything. \
+                  Cleaning shows exactly what it will do and asks first; protected \
+                  Windows files are never touched. No data ever leaves this machine."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -61,6 +64,14 @@ enum Command {
         #[arg(long, short)]
         quiet: bool,
     },
+    /// List or check cleaning rules.
+    #[command(subcommand)]
+    Rules(clean::RulesCommand),
+    /// Clean junk found by the rules (safe items by default).
+    Clean(clean::CleanArgs),
+    /// Look into, restore from, or empty the recovery bin.
+    #[command(subcommand)]
+    Recover(clean::RecoverCommand),
 }
 
 fn main() -> ExitCode {
@@ -84,6 +95,9 @@ fn main() -> ExitCode {
             snapshot: !no_snapshot,
             quiet,
         }),
+        Command::Rules(cmd) => clean::rules_cmd(cmd),
+        Command::Clean(args) => clean::clean_cmd(args),
+        Command::Recover(cmd) => clean::recover_cmd(cmd),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -94,7 +108,7 @@ fn main() -> ExitCode {
     }
 }
 
-type CliResult = Result<(), Box<dyn std::error::Error>>;
+pub(crate) type CliResult = Result<(), Box<dyn std::error::Error>>;
 
 fn drives(json: bool) -> CliResult {
     let drives = platform::drives();
@@ -378,8 +392,13 @@ fn print_json(scan: &Scan, top: usize, depth: usize) -> CliResult {
     Ok(())
 }
 
+/// 1 -> "1 file", 1234 -> "1,234 files"
+pub(crate) fn files(n: u64) -> String {
+    format!("{} file{}", group(n), if n == 1 { "" } else { "s" })
+}
+
 /// 1234567 -> "1,234,567"
-fn group(n: u64) -> String {
+pub(crate) fn group(n: u64) -> String {
     let s = n.to_string();
     let mut out = String::with_capacity(s.len() + s.len() / 3);
     for (i, c) in s.chars().enumerate() {
@@ -391,7 +410,7 @@ fn group(n: u64) -> String {
     out
 }
 
-fn truncate(s: &str, max: usize) -> String {
+pub(crate) fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()
     } else {
