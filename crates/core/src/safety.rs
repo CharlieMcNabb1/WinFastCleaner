@@ -538,13 +538,16 @@ impl WindowsLayout {
             }
             app_dirs.push(exe);
         }
+        // Environment values may use 8.3 short names, which `normalize`
+        // refuses; expand them so every location is really protected.
+        let long = |p: PathBuf| crate::platform::long_path(&p);
         WindowsLayout {
-            system_root,
-            program_files,
-            program_data,
-            users_dir,
-            profiles,
-            app_dirs,
+            system_root: long(system_root),
+            program_files: program_files.into_iter().map(long).collect(),
+            program_data: long(program_data),
+            users_dir: long(users_dir),
+            profiles: profiles.into_iter().map(long).collect(),
+            app_dirs: app_dirs.into_iter().map(long).collect(),
         }
     }
 }

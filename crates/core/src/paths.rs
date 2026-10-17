@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// Settings, scan snapshots, the recovery index, rules, and logs live here.
 pub fn default_data_dir() -> Option<PathBuf> {
     #[cfg(windows)]
-    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    let base = std::env::var_os("LOCALAPPDATA").map(|p| crate::platform::long_path(Path::new(&p)));
     #[cfg(not(windows))]
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)

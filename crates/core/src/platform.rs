@@ -77,7 +77,8 @@ mod imp {
         BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
         FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
         GetCompressedFileSizeW, GetDiskFreeSpaceExW, GetDiskFreeSpaceW, GetDriveTypeW,
-        GetFileInformationByHandle, GetLogicalDrives, GetVolumeInformationW, GetVolumePathNameW,
+        GetFileInformationByHandle, GetLogicalDrives, GetLongPathNameW, GetVolumeInformationW,
+        GetVolumePathNameW,
     };
     use windows_sys::Win32::System::SystemInformation::GetWindowsDirectoryW;
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
@@ -132,6 +133,25 @@ mod imp {
         // SAFETY: the buffer and its length match.
         let len = unsafe { GetWindowsDirectoryW(buf.as_mut_ptr(), buf.len() as u32) } as usize;
         (len > 0 && len < buf.len()).then(|| PathBuf::from(OsString::from_wide(&buf[..len])))
+    }
+
+    /// `path` with 8.3 short names (`C:\Users\RUNNER~1`) expanded to their
+    /// long form. Paths that don't exist are returned unchanged.
+    pub fn long_path(path: &Path) -> PathBuf {
+        let w = wide(path.as_os_str());
+        let mut buf = vec![0u16; 512];
+        loop {
+            // SAFETY: `w` is NUL-terminated; the buffer and its length match.
+            let n = unsafe { GetLongPathNameW(w.as_ptr(), buf.as_mut_ptr(), buf.len() as u32) }
+                as usize;
+            if n == 0 || n > 32_768 {
+                return path.to_path_buf();
+            }
+            if n < buf.len() {
+                return PathBuf::from(OsString::from_wide(&buf[..n]));
+            }
+            buf.resize(n + 1, 0);
+        }
     }
 
     /// Root of the volume containing `path`, for example `C:\`.
@@ -300,6 +320,10 @@ mod imp {
 
     pub fn windows_dir() -> Option<PathBuf> {
         None
+    }
+
+    pub fn long_path(path: &Path) -> PathBuf {
+        path.to_path_buf()
     }
 
     pub fn volume_root(_path: &Path) -> Option<PathBuf> {

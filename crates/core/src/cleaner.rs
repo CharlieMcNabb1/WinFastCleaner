@@ -905,9 +905,11 @@ mod tests {
 
     fn env() -> Env {
         let tmp = tempfile::tempdir().unwrap();
-        let junk = std::fs::canonicalize(tmp.path()).unwrap().join("Local");
-        let data = tmp.path().join("data");
-        let bin = tmp.path().join("bin");
+        // Long, final paths (temp folders may have 8.3 short names).
+        let base = crate::platform::simplify_path(std::fs::canonicalize(tmp.path()).unwrap());
+        let junk = base.join("Local");
+        let data = base.join("data");
+        let bin = base.join("bin");
         for d in [&junk, &data, &bin] {
             std::fs::create_dir_all(d).unwrap();
         }
@@ -1136,16 +1138,27 @@ mod tests {
     #[test]
     fn protected_paths_are_never_deleted_even_if_planned() {
         let e = env();
-        let c = ctx(&e, &[]);
-        // A system file the guard protects on every platform.
+        let mut c = ctx(&e, &[]);
+        // A guard whose protected system folder lives inside the temp
+        // folder, so nothing outside it is ever at stake.
+        let base = crate::platform::simplify_path(std::fs::canonicalize(e.tmp.path()).unwrap());
         let protected = if cfg!(windows) {
-            crate::platform::windows_dir().unwrap().join("explorer.exe")
+            c.guard = Guard::windows(&crate::safety::WindowsLayout {
+                system_root: base.join("Windows"),
+                program_files: vec![base.join("Program Files")],
+                program_data: base.join("ProgramData"),
+                users_dir: base.join("Users"),
+                profiles: Vec::new(),
+                app_dirs: Vec::new(),
+            });
+            base.join(r"Windows\explorer.exe")
         } else {
-            PathBuf::from("/etc/hostname")
+            c.guard = Guard::unix(&[base.join("app")]);
+            base.join("app/settings.json")
         };
-        let Ok(md) = std::fs::metadata(&protected) else {
-            return;
-        };
+        write(&protected, 100);
+        assert!(c.guard.check(&protected).is_err());
+        let md = std::fs::metadata(&protected).unwrap();
         let plan = CleanPlan {
             items: vec![PlanItem {
                 path: protected.clone(),
