@@ -72,6 +72,8 @@ html,
 body {
   margin: 0;
   height: 100%;
+  /* Only the panes (and the sidebar) scroll, never the whole window. */
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);

@@ -13,16 +13,21 @@ import type {
   DupeGroupView,
   FileKind,
   FoundFile,
+  HealthView,
   JunkItem,
   NodeDetail,
   NodeView,
   PlanView,
   RuleView,
   ScanSummary,
+  ServiceItem,
   SettingsView,
+  StartupItem,
   Tier,
   TraceInfo,
   TreemapNode,
+  UpdatesSummary,
+  Upgrade,
 } from "./types.ts";
 import { Flags } from "./types.ts";
 
@@ -258,6 +263,65 @@ function mockDupes(root: string): DupeGroupView[] {
   }));
 }
 
+function mockStartup(): StartupItem[] {
+  const u = "C:\\Users\\test-user\\AppData";
+  const run = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+  const hklm = "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+  const folder = `${u}\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup`;
+  const item = (
+    id: string,
+    name: string,
+    source: StartupItem["source"],
+    location: string,
+    program: string,
+    publisher: string | null,
+    enabled = true,
+  ): StartupItem => ({
+    id,
+    name,
+    source,
+    location,
+    command: program.includes(" ") ? `"${program}" --background` : `${program} --background`,
+    program,
+    publisher,
+    enabled,
+    machine: source === "machineRun" || source === "machineRun32" || source === "commonFolder",
+    disabledAt: enabled ? null : 1_791_000_000,
+  });
+  return [
+    item("user-run:Discord", "Discord", "userRun", run, `${u}\\Local\\Discord\\Update.exe`, "Discord Inc."),
+    item("user-run:Spotify", "Spotify", "userRun", run, `${u}\\Roaming\\Spotify\\Spotify.exe`, "Spotify Ltd", false),
+    item("user-run:OneDrive", "OneDrive", "userRun", run, "C:\\Program Files\\Microsoft OneDrive\\OneDrive.exe", "Microsoft Corporation"),
+    item("user-run:Steam", "Steam", "userRun", run, "C:\\Program Files (x86)\\Steam\\steam.exe", "Valve Corporation"),
+    item("user-run:Teams", "Microsoft Teams", "userRun", run, `${u}\\Local\\Microsoft\\Teams\\Update.exe`, "Microsoft Corporation"),
+    item("machine-run:SecurityHealth", "SecurityHealth", "machineRun", hklm, "C:\\Windows\\System32\\SecurityHealthSystray.exe", "Microsoft Corporation"),
+    item("machine-run:RtkAudUService", "RtkAudUService", "machineRun", hklm, "C:\\Windows\\System32\\RtkAudUService64.exe", "Realtek Semiconductor"),
+    item("machine-run32:Adobe CCXProcess", "Adobe CCXProcess", "machineRun32", hklm, "C:\\Program Files (x86)\\Adobe\\Adobe Creative Cloud Experience\\CCXProcess.exe", "Adobe Inc."),
+    item("user-folder:Notes helper.lnk", "Notes helper", "userFolder", folder, "C:\\Tools\\notes-helper.exe", null),
+    item("user-folder:sync.cmd", "sync", "userFolder", folder, `${folder}\\sync.cmd`, null, false),
+    item("task:\\GoogleUpdateTaskMachineCore", "GoogleUpdateTaskMachineCore", "task", "Task Scheduler \\", "C:\\Program Files (x86)\\Google\\Update\\GoogleUpdate.exe", "Google LLC"),
+    item("task:\\Vendor\\Tray at logon", "Tray at logon", "task", "Task Scheduler \\Vendor", "C:\\Program Files\\Vendor\\tray.exe", "Vendor Corp"),
+  ];
+}
+
+function mockServices(): ServiceItem[] {
+  return [
+    { name: "AdobeARMservice", displayName: "Adobe Acrobat Update Service", program: "C:\\Program Files (x86)\\Common Files\\Adobe\\ARM\\1.0\\armsvc.exe", publisher: "Adobe Inc.", running: true, delayed: false },
+    { name: "edgeupdate", displayName: "Microsoft Edge Update Service (edgeupdate)", program: "C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe", publisher: "Microsoft Corporation", running: false, delayed: true },
+    { name: "Steam Client Service", displayName: "Steam Client Service", program: "C:\\Program Files (x86)\\Common Files\\Steam\\steamservice.exe", publisher: "Valve Corporation", running: false, delayed: false },
+  ];
+}
+
+function mockUpgrades(): Upgrade[] {
+  return [
+    { name: "Git", id: "Git.Git", version: "2.44.0", available: "2.45.1", source: "winget", canUpdate: true },
+    { name: "Mozilla Firefox (x64 en-US)", id: "Mozilla.Firefox", version: "125.0.3", available: "126.0.1", source: "winget", canUpdate: true },
+    { name: "Microsoft Visual C++ 2015-2022 Redistributable", id: "Microsoft.VCRedist.2015+.x64", version: "14.38.33135.0", available: "14.40.33810.0", source: "winget", canUpdate: true },
+    { name: "7-Zip", id: "7zip.7zip", version: "23.01", available: "24.07", source: "winget", canUpdate: true },
+    { name: "A long app name here", id: "Some.Really.Long.Package.I…", version: "1.0", available: "2.0", source: "winget", canUpdate: false },
+  ];
+}
+
 export function createMockBackend(): Backend {
   let nodes: MockNode[] = [];
   let scanId = 0;
@@ -323,6 +387,13 @@ export function createMockBackend(): Backend {
       })),
     },
   ];
+  // Startup, updates, and health state.
+  let startupItems = mockStartup();
+  let upgrades: Upgrade[] = mockUpgrades();
+  let lastUpdates: UpdatesSummary | null = null;
+  let applying = false;
+  let cancelApply = false;
+  let junkScanned: { at: number; bytes: number; files: number } | null = null;
   let settingsView: SettingsView = {
     settings: {
       exclusions: [{ kind: "folder", value: "C:\\Users\\test-user\\Projects\\keep" }],
@@ -330,6 +401,16 @@ export function createMockBackend(): Backend {
       bin: { maxBytes: 5 * GB, maxPercent: 10, maxBatches: 5, maxAgeDays: 14 },
       snapshotDays: 90,
       secureDelete: false,
+      health: {
+        diskFreeYellowPct: 15,
+        diskFreeRedPct: 5,
+        junkYellowGb: 5,
+        junkRedGb: 20,
+        startupYellow: 10,
+        startupRed: 20,
+        binYellowPct: 90,
+        ssdWearYellowPct: 80,
+      },
     },
     dataDir: "C:\\Users\\test-user\\AppData\\Local\\WinFastCleaner",
     rulesDir: "C:\\Users\\test-user\\AppData\\Local\\WinFastCleaner\\rules",
@@ -467,6 +548,11 @@ export function createMockBackend(): Backend {
     startJunkScan: async (onEvent) => {
       await delay(900);
       junkId += 1;
+      junkScanned = {
+        at: Math.floor(Date.now() / 1000),
+        bytes: rules.reduce((s, r) => s + r.size, 0),
+        files: rules.reduce((s, r) => s + r.files, 0),
+      };
       onEvent({
         type: "done",
         result: {
@@ -779,6 +865,154 @@ export function createMockBackend(): Backend {
     locateNode: async (_scan, path) => {
       const id = nodes.findIndex((_, i) => pathOf(i) === path);
       return id >= 0 ? id : null;
+    },
+    startupList: async () => {
+      await delay(250);
+      return {
+        items: startupItems.map((i) => ({ ...i })),
+        errors: [],
+        services: mockServices(),
+        servicesError: null,
+        elevated: false,
+      };
+    },
+    startupSetEnabled: async (id, enabled) => {
+      await delay(200);
+      const item = startupItems.find((i) => i.id === id);
+      if (!item) throw new Error("This item is no longer in the startup list. Refresh and try again.");
+      if (item.machine) {
+        throw new Error(
+          "Windows needs administrator rights to change an item that starts for every user. Restart as administrator and try again.",
+        );
+      }
+      item.enabled = enabled;
+      item.disabledAt = enabled ? null : Math.floor(Date.now() / 1000);
+      return { ...item };
+    },
+
+    updatesStatus: async () => ({ installed: true, missingMessage: null, last: lastUpdates }),
+    updatesList: async () => {
+      await delay(1500);
+      lastUpdates = { checkedAt: Math.floor(Date.now() / 1000), count: upgrades.length };
+      return upgrades.map((u) => ({ ...u }));
+    },
+    updatesApply: async (ids, onEvent) => {
+      if (applying) throw new Error("winget is already running.");
+      applying = true;
+      cancelApply = false;
+      void (async () => {
+        let cancelled = false;
+        for (const [index, id] of ids.entries()) {
+          if (cancelApply) {
+            cancelled = true;
+            break;
+          }
+          onEvent({ type: "started", id, index, total: ids.length });
+          await delay(1200);
+          const up = upgrades.find((u) => u.id === id);
+          const ok = id !== "7zip.7zip";
+          onEvent({
+            type: "finished",
+            result: {
+              id,
+              ok,
+              message: ok
+                ? `Updated to ${up?.available ?? "the latest version"}.`
+                : "The update failed (code 0x8A15010B): The installer failed with exit code 1603.",
+            },
+          });
+          if (ok) upgrades = upgrades.filter((u) => u.id !== id);
+        }
+        applying = false;
+        onEvent({ type: "done", cancelled });
+      })();
+    },
+    updatesCancel: async () => {
+      cancelApply = true;
+    },
+
+    healthCheck: async (): Promise<HealthView> => {
+      await delay(300);
+      const t = settingsView.settings.health;
+      const enabled = startupItems.filter((i) => i.enabled).length;
+      const c = drives.find((d) => d.isSystem)!;
+      const pctFree = Math.floor((c.free / c.total) * 100);
+      const junkBytes = junkScanned?.bytes ?? null;
+      const checks: HealthView["checks"] = [
+        {
+          id: "diskSpace",
+          title: "Disk space",
+          status: pctFree < t.diskFreeRedPct ? "red" : pctFree < t.diskFreeYellowPct ? "yellow" : "green",
+          summary:
+            pctFree < t.diskFreeYellowPct
+              ? `C: has ${pctFree}% free (61.0 GB of 476.0 GB).`
+              : `Every drive has at least ${t.diskFreeYellowPct}% free.`,
+          details: ["C: has 12% free (61.0 GB of 476.0 GB).", "D: has 64% free (1.2 TB of 1.8 TB)."],
+          fix: pctFree < t.diskFreeYellowPct ? "cleaner" : null,
+          asOf: null,
+        },
+        junkBytes === null
+          ? { id: "junk", title: "Junk", status: "unknown", summary: "Not scanned yet.", details: [], fix: "cleaner", asOf: null }
+          : {
+              id: "junk",
+              title: "Junk",
+              status: junkBytes > t.junkRedGb * GB ? "red" : junkBytes > t.junkYellowGb * GB ? "yellow" : "green",
+              summary: `${(junkBytes / GB).toFixed(1)} GB can be cleaned (${junkScanned!.files} files).`,
+              details: [],
+              fix: junkBytes > t.junkYellowGb * GB ? "cleaner" : null,
+              asOf: junkScanned!.at,
+            },
+        {
+          id: "startup",
+          title: "Startup apps",
+          status: enabled > t.startupRed ? "red" : enabled > t.startupYellow ? "yellow" : "green",
+          summary: `${enabled} apps start when you sign in.`,
+          details: [],
+          fix: enabled > t.startupYellow ? "startup" : null,
+          asOf: null,
+        },
+        {
+          id: "driveHealth",
+          title: "Drive health",
+          status: "green",
+          summary: "All 2 drives report they are healthy.",
+          details: ["Samsung SSD 980 PRO 1TB (SSD): healthy, 4% of rated life used", "WDC WD20EZAZ (HDD): healthy"],
+          fix: null,
+          asOf: null,
+        },
+        {
+          id: "temperatures",
+          title: "Temperatures",
+          status: "unknown",
+          summary: "Not available yet.",
+          details: ["Reading CPU and GPU temperatures needs a hardware sensor driver, which WinFastCleaner doesn't install."],
+          fix: null,
+          asOf: null,
+        },
+        lastUpdates === null
+          ? { id: "updates", title: "App updates", status: "unknown", summary: "Not checked yet.", details: [], fix: "updates", asOf: null }
+          : {
+              id: "updates",
+              title: "App updates",
+              status: lastUpdates.count > 0 ? "yellow" : "green",
+              summary: lastUpdates.count > 0 ? `${lastUpdates.count} app updates available.` : "Your apps are up to date.",
+              details: [],
+              fix: lastUpdates.count > 0 ? "updates" : null,
+              asOf: lastUpdates.checkedAt,
+            },
+        {
+          id: "recoveryBin",
+          title: "Recovery bin",
+          status: "green",
+          summary: `${(batches.reduce((s, b) => s + b.items.reduce((a, i) => a + i.size, 0), 0) / MB).toFixed(1)} MB in the recovery bin.`,
+          details: [],
+          fix: "recover",
+          asOf: null,
+        },
+      ];
+      const order = ["unknown", "green", "yellow", "red"] as const;
+      const overall = checks.reduce((w, c) => (order.indexOf(c.status) > order.indexOf(w) ? c.status : w), "unknown" as HealthView["overall"]);
+      return { checks, overall };
     },
   };
 }

@@ -28,6 +28,12 @@
 │  dupes.rs     duplicates: size → partial BLAKE3 → full BLAKE3          │
 │  grew.rs      "What grew": compares two snapshots                      │
 │  privacy.rs   Windows traces: recent docs, jump lists, Run, clipboard  │
+│  startup.rs   startup items: list, turn off/on (never delete)          │
+│  services.rs  auto-start services (read-only)                          │
+│  winget.rs    app updates: find winget, parse its table, upgrade       │
+│  health.rs    health checks: pure evaluate() + cached inputs           │
+│  wincom.rs    COM: Task Scheduler, WMI, shell links (Windows)          │
+│  winreg.rs    registry access (Windows)                                │
 │  log.rs       local cleanup log (JSON lines, rotated)                  │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -191,6 +197,35 @@ the Disk tab's scan of the same root) they start instantly.
   the most specific folder that explains it: a folder is hidden when one of
   its subfolders accounts for at least 75% of its change.
 
+## Startup manager, updates, and health check
+
+- `startup::list` reads the Run keys (`HKCU`, `HKLM`, and `HKLM`'s 32-bit
+  view), the two Startup folders (resolving `.lnk` targets through
+  `IShellLink`), and, through Task Scheduler's COM API, tasks outside
+  `\Microsoft\` that have a sign-in trigger. Each item's on/off state comes
+  from Task Manager's `Explorer\StartupApproved` values (or the task's own
+  flag), and its publisher from the program's version information, read as
+  data. `startup::set_enabled` writes only that switch (12 bytes: `02` on,
+  `03` and the time off) or the task's flag. Locations are a parameter, so
+  tests use a throwaway `HKCU` key, a temporary folder, and a throwaway task.
+- `services::auto_start` lists Win32 services set to start automatically
+  whose program is outside the Windows folder. It only queries.
+- `winget::list` runs `winget upgrade` and parses its table by column
+  position (the header line above the dashes; display width counts East
+  Asian wide characters as two), so translated headers work. `winget::upgrade`
+  runs `winget upgrade --id <id> --exact --silent` with the agreements
+  accepted and no interactivity, one app at a time.
+- `health::evaluate` is a pure function from `health::Inputs` (drives, the
+  cached junk and update summaries, the startup count, drive health, recovery
+  bin usage) and the thresholds in settings to a list of checks.
+  `health::read_disks` queries `MSFT_PhysicalDisk` (health status),
+  `MSFT_StorageReliabilityCounter` (wear), and, where readable,
+  `MSStorageDriver_FailurePredictData` (raw SMART: reallocated, pending, and
+  uncorrectable sectors) through WMI.
+- The app's junk scan saves `junk-summary.json` and the update check saves
+  `updates-summary.json` in the data folder, so the health check (and later
+  the tray) can use them without scanning again.
+
 ## Elevation
 
 The app runs unelevated by default. Admin rights are needed for the fast
@@ -226,7 +261,12 @@ never links. Phase 3's "What grew" view compares two snapshots.
   the UI sends are the folder to scan, which is validated (absolute, no
   device paths, no NUL, length-limited), and exclusions, which can only
   protect files and are validated too.
-- **No network:** `deny.toml` bans HTTP and TLS client crates.
+- **No network:** `deny.toml` bans HTTP and TLS client crates. The only
+  outside programs are `winget` (Updates tab) and `Dism.exe` (Deep clean),
+  each started with fixed arguments and no shell. winget is taken from its
+  fixed per-user location, never looked up through `PATH`, and only package
+  ids from winget's own latest list, checked against a strict pattern, are
+  passed back to it.
 - WebView2 keeps its own browser data folder
   (`%LOCALAPPDATA%\io.github.winfastcleaner\`). The app loads no remote
   content, so this only holds WebView2's own caches.
@@ -241,6 +281,8 @@ never links. Phase 3's "What grew" view compares two snapshots.
 | MFT reader vs. walker on a real NTFS image (hard links, attribute lists, sparse files, ADS, junctions, symlinks, Unicode) | `crates/core/tests/ntfs_image.rs` + `scripts/ntfs-test-image.sh` | Linux CI |
 | MFT scan vs. walker on a real Windows folder, plus a full system-drive MFT scan | `crates/core/tests/windows_volume.rs` | Windows CI (elevated) |
 | File finders and comparisons: largest/oldest files, duplicates decided by full contents (same start and end but different middle are not duplicates), hard links, never removing every copy, growth at the right folder | `crates/core/src/{finder,dupes,grew}.rs` | Windows + Linux CI |
+| Startup items turned off and on in a throwaway `HKCU` key and temp folder (Run values and shortcuts are never deleted); reading the real lists, services, and drive health; a throwaway scheduled task registered, toggled, and deleted | `crates/core/src/{startup,wincom}.rs`, `health.rs` | Windows CI |
+| winget table parsing (translated and wide-character headers, truncated ids, second tables), id validation, health thresholds, SMART parsing | `crates/core/src/{winget,health}.rs` | Windows + Linux CI |
 | CLI end-to-end, including dry run, clean, restore, finders, and What grew in temp folders | `crates/cli/tests/cli.rs` | Windows + Linux CI |
-| Frontend formatting, treemap layout, cleaner selection logic | `app/src/lib/*.test.ts` | Windows CI |
+| Frontend formatting, treemap layout, cleaner selection logic, health/startup/update helpers | `app/src/lib/*.test.ts` | Windows CI |
 | UI in a browser with fake data | `npm run dev:mock` | Local |

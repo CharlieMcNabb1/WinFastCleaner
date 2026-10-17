@@ -11,6 +11,7 @@ import type {
   FileKind,
   FindEvent,
   FindRequest,
+  HealthView,
   JunkEvent,
   JunkItemsPage,
   ManualPlanView,
@@ -24,10 +25,15 @@ import type {
   Settings,
   SettingsView,
   SnapshotView,
+  StartupItem,
+  StartupView,
   Trace,
   TraceInfo,
   TraceResult,
   TreemapNode,
+  UpdateEvent,
+  UpdatesStatus,
+  Upgrade,
 } from "./types.ts";
 
 /** Everything the UI can ask of the backend. */
@@ -89,6 +95,23 @@ export interface Backend {
   // Privacy (Windows traces)
   privacySurvey(): Promise<TraceInfo[]>;
   privacyClear(traces: Trace[]): Promise<TraceResult[]>;
+
+  // Startup
+  startupList(): Promise<StartupView>;
+  /** Turns an item on or off (never deletes it) and returns it as it is now. */
+  startupSetEnabled(id: string, enabled: boolean): Promise<StartupItem>;
+
+  // App updates (winget)
+  updatesStatus(): Promise<UpdatesStatus>;
+  /** Asks winget for updates (can take a minute). */
+  updatesList(): Promise<Upgrade[]>;
+  /** Updates apps from the latest list, one at a time. */
+  updatesApply(ids: string[], onEvent: (e: UpdateEvent) => void): Promise<void>;
+  /** Stops checking, or stops updating after the current app. */
+  updatesCancel(): Promise<void>;
+
+  // Health check (read-only)
+  healthCheck(): Promise<HealthView>;
 }
 
 let instance: Promise<Backend> | null = null;

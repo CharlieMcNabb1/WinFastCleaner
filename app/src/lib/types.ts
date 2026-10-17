@@ -311,6 +311,8 @@ export interface Settings {
   snapshotDays: number;
   /** Offer secure delete (overwrite before deleting). */
   secureDelete: boolean;
+  /** When health checks turn yellow or red. */
+  health: HealthThresholds;
 }
 
 export interface SettingsView {
@@ -439,3 +441,113 @@ export interface TraceResult {
   skipped: { path: string; reason: string }[];
   error: string | null;
 }
+
+// ----------------------------------------------------------------- startup
+// (see crates/core/src/startup.rs and app/src-tauri/src/startup_cmds.rs)
+
+export type StartupSource = "userRun" | "machineRun" | "machineRun32" | "userFolder" | "commonFolder" | "task";
+
+export interface StartupItem {
+  id: string;
+  name: string;
+  source: StartupSource;
+  location: string;
+  command: string;
+  program: string | null;
+  publisher: string | null;
+  enabled: boolean;
+  /** Starts for every user; changing it needs administrator rights. */
+  machine: boolean;
+  disabledAt: number | null;
+}
+
+export interface ServiceItem {
+  name: string;
+  displayName: string;
+  program: string | null;
+  publisher: string | null;
+  running: boolean;
+  delayed: boolean;
+}
+
+export interface StartupView {
+  items: StartupItem[];
+  errors: string[];
+  services: ServiceItem[];
+  servicesError: string | null;
+  elevated: boolean;
+}
+
+// ----------------------------------------------------------------- updates
+// (see crates/core/src/winget.rs and app/src-tauri/src/updates_cmds.rs)
+
+export interface Upgrade {
+  name: string;
+  id: string;
+  version: string;
+  available: string;
+  source: string | null;
+  /** False when winget's id was cut short, so it can't be passed back. */
+  canUpdate: boolean;
+}
+
+export interface UpgradeResult {
+  id: string;
+  ok: boolean;
+  message: string;
+}
+
+export interface UpdatesSummary {
+  checkedAt: number;
+  count: number;
+}
+
+export interface UpdatesStatus {
+  installed: boolean;
+  missingMessage: string | null;
+  last: UpdatesSummary | null;
+}
+
+export type UpdateEvent =
+  | { type: "started"; id: string; index: number; total: number }
+  | { type: "finished"; result: UpgradeResult }
+  | { type: "done"; cancelled: boolean };
+
+// ----------------------------------------------------------------- health
+// (see crates/core/src/health.rs and app/src-tauri/src/health_cmds.rs)
+
+export type HealthStatus = "unknown" | "green" | "yellow" | "red";
+export type CheckId = "diskSpace" | "junk" | "startup" | "driveHealth" | "temperatures" | "updates" | "recoveryBin";
+/** The tab where a check's problem can be fixed. */
+export type Fix = "disk" | "cleaner" | "startup" | "updates" | "recover";
+
+export interface Check {
+  id: CheckId;
+  title: string;
+  status: HealthStatus;
+  summary: string;
+  details: string[];
+  fix: Fix | null;
+  asOf: number | null;
+}
+
+export interface HealthView {
+  checks: Check[];
+  overall: HealthStatus;
+}
+
+export interface HealthThresholds {
+  diskFreeYellowPct: number;
+  diskFreeRedPct: number;
+  junkYellowGb: number;
+  junkRedGb: number;
+  startupYellow: number;
+  startupRed: number;
+  binYellowPct: number;
+  ssdWearYellowPct: number;
+}
+
+// ----------------------------------------------------------------- navigation
+
+/** Where the Cleaner tab should go when opened from another tab. */
+export type CleanerFocus = { kind: "rule"; ruleId: string; seq: number } | { kind: "safe"; seq: number };

@@ -41,6 +41,13 @@ fn main() {
             "compare_snapshots",
             "privacy_survey",
             "privacy_clear",
+            "startup_list",
+            "startup_set_enabled",
+            "updates_status",
+            "updates_list",
+            "updates_apply",
+            "updates_cancel",
+            "health_check",
         ]),
     ))
     .expect("failed to run tauri-build");

@@ -2,7 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type { Backend } from "./backend.ts";
-import type { CleanEvent, DeepCleanEvent, FindEvent, JunkEvent, ScanEvent } from "./types.ts";
+import type { CleanEvent, DeepCleanEvent, FindEvent, JunkEvent, ScanEvent, UpdateEvent } from "./types.ts";
 
 function channel<T>(onEvent: (e: T) => void): Channel<T> {
   const c = new Channel<T>();
@@ -77,5 +77,15 @@ export function createTauriBackend(): Backend {
 
     privacySurvey: () => invoke("privacy_survey"),
     privacyClear: (traces) => invoke("privacy_clear", { traces }),
+
+    startupList: () => invoke("startup_list"),
+    startupSetEnabled: (id, enabled) => invoke("startup_set_enabled", { id, enabled }),
+
+    updatesStatus: () => invoke("updates_status"),
+    updatesList: () => invoke("updates_list"),
+    updatesApply: (ids, onEvent) => invoke("updates_apply", { ids, onEvent: channel<UpdateEvent>(onEvent) }),
+    updatesCancel: () => invoke("updates_cancel"),
+
+    healthCheck: () => invoke("health_check"),
   };
 }

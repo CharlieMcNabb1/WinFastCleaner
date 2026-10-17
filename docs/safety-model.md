@@ -113,6 +113,43 @@ are deleted through the same link-safe handles and guard as everything else.
 The only registry data touched is the values of the user's own
 `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU`.
 
+## Startup manager
+
+The Startup tab never deletes anything. Turning an item off writes the same
+switch Task Manager's Startup tab uses, a value under
+`Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved`
+(`Run`, `Run32`, or `StartupFolder`) named after the item; turning it back on
+rewrites that value. The Run value, the shortcut in the Startup folder, and
+the program are left alone. A scheduled task is turned off and on with Task
+Scheduler's own enabled flag. The app can only switch an item that is in a
+fresh listing (it looks the item up by ID; the frontend never names a key,
+file, or task). Items that start for every user live under
+`HKEY_LOCAL_MACHINE` and need administrator rights; without them the switch
+is disabled and Windows' refusal is reported, never worked around.
+
+Services set to start automatically are listed read-only. Reading a
+program's publisher reads its version information as data; no code from it
+runs, and cloud-only files are skipped so they aren't downloaded.
+
+## App updates (winget)
+
+The Updates tab runs Windows' own `winget` as a separate process, with no
+window and no shell, from its fixed per-user location
+(`%LOCALAPPDATA%\Microsoft\WindowsApps\winget.exe`), never through `PATH`.
+Only package ids from winget's latest list can be updated, and each id must
+match a strict pattern (letters, digits, `. _ - +`, starting with a letter or
+digit), so it can never be read as an option. Nothing is picked by default.
+An update runs that app's own installer; it is never stopped halfway (Cancel
+takes effect between apps), because stopping an installer midway could
+leave the app broken.
+
+## Health check
+
+The health check only reads: free space, the cached junk and update
+summaries, the startup list, the recovery bin's usage, and Windows' drive
+health reports through WMI. It changes nothing; each problem links to the
+tab where the user can act.
+
 ## Secure delete
 
 Secure delete (off by default, offered only when turned on in Settings)
@@ -217,7 +254,8 @@ and finishes it safely, so it isn't cancelled midway.
   only that previewed plan, once. The only paths the UI sends are the folder
   to scan and exclusions (a list that can only protect files).
 - **No network access** from the app. `deny.toml` bans HTTP and TLS client
-  crates.
+  crates. The only outside programs it starts are `winget` (Updates tab) and
+  `Dism.exe` (Deep clean), with fixed arguments.
 - **Rule files are data only.** Loading a rule can never execute code or run
   a command. Unknown fields are rejected, every value is validated, and a
   rule aimed at a protected location is refused (see the

@@ -4,11 +4,12 @@ A fast, safe, transparent disk cleaner and system health tool for Windows 10
 and 11 (x64). WinFastCleaner is an open-source alternative to CCleaner. It is
 not affiliated with or endorsed by CCleaner or Piriform/Gen Digital.
 
-> **Status: early development (Phase 4 of 6).** The disk scanner, Disk view,
+> **Status: early development (Phase 5 of 6).** The disk scanner, Disk view,
 > cleaner, recovery bin, file finders, "What grew", Windows privacy cleaning,
-> and secure delete work today. It has not been tested widely on real
-> PCs yet, so preview what it will clean and keep the recovery bin on. See
-> [Roadmap](#roadmap).
+> secure delete, the startup manager, app updates through winget, and the
+> health check on the Home dashboard work today. It has not been tested
+> widely on real PCs yet, so preview what it will clean and keep the
+> recovery bin on. See [Roadmap](#roadmap).
 
 - **Fast.** On NTFS drives, when run as administrator, it reads the Master
   File Table directly, so a full drive scan takes seconds. Otherwise it falls
@@ -140,9 +141,10 @@ Settings if you prefer.
 
 - **No telemetry, analytics, crash reporting, or update pings.** The app
   makes no network requests at all.
-- The only external programs it runs are Windows' own `winget`, and only
-  when you use the Updates tab (Phase 5), and `Dism.exe`, only when you click
-  **Deep clean**.
+- The only external programs it runs are Windows' own `winget` (the Windows
+  Package Manager), only in the Updates tab, and `Dism.exe`, only when you
+  click **Deep clean**. winget itself contacts its package sources to look
+  for updates and download them; that is winget's traffic, not the app's.
 - Settings, scan snapshots, and logs stay on your machine in
   `%LOCALAPPDATA%\WinFastCleaner\`. Logs contain paths and sizes only, and
   are rotated.
@@ -157,7 +159,7 @@ Settings if you prefer.
 | 2 | Rule files, built-in rules, tiered Cleaner tab, parallel deletion, recovery bin, exclusions, safety rules, `--dry-run` | **Built** |
 | 3 | Large/old file finder, duplicate finder, "What grew" | **Built** |
 | 4 | Privacy cleaning, secure delete | **Built** (Windows traces; browser history and cookies deferred) |
-| 5 | Startup manager, winget updater, health check, Home dashboard | Planned |
+| 5 | Startup manager, winget updater, health check, Home dashboard | **Built** (CPU/GPU temperatures deferred) |
 | 6 | Scheduled cleaning, tray monitor, settings, installer, docs | Planned |
 
 ## Using it today
@@ -167,8 +169,13 @@ described below.
 
 ### Desktop app
 
-- **Disk** opens first and immediately scans your system drive. Pick another
-  drive or **Scan a folder…**. Click folders in the tree, treemap, or table
+- **Home** opens first: the health check, your drives' free space, how much
+  junk can be cleaned (with **Clean safe items**, which opens the exact list
+  of safe items to confirm), and the top three folders that grew since the
+  previous scan. On every launch the app scans your system drive and looks
+  for junk, with no setup wizard.
+- **Disk** shows what is using space on the drive scanned at launch. Pick
+  another drive or **Scan a folder…**. Click folders in the tree, treemap, or table
   to drill in. Each item shows its size, size on disk, share of its folder
   and of the drive, file count, and last-modified date. Right-click (or use
   **⋯**) to show an item in File Explorer, copy its path, **send it to the
@@ -197,12 +204,24 @@ described below.
   it.
 - **Privacy** clears Windows traces, each on its own and none ticked by
   default (see [Privacy tab](#privacy-tab)).
+- **Startup** lists what starts when you sign in: the registry Run keys
+  (yours and the machine's), the Startup folders, and scheduled tasks that
+  run at sign-in, each with its publisher, command, and where it comes from.
+  Turning one off uses the same switch as Task Manager, so it can be turned
+  back on; nothing is ever deleted. Items that start for every user need
+  administrator rights to change. Services set to start automatically are
+  listed separately, read-only (Windows' own services are left out).
+- **Updates** lists installed apps with newer versions, using winget.
+  Nothing is picked for you; tick the apps and **Update selected** runs each
+  update in turn with a per-app result. If winget isn't installed, the tab
+  explains how to get it (App Installer, from the Microsoft Store) instead.
 - **Recover** lists recovery bin batches, newest first, with bin usage per
   drive. Restore a whole batch or chosen files, delete a batch, or empty the
   bin.
 - **Settings**: send safe items to the bin too, secure delete, recovery bin
-  limits, how long to keep scan snapshots, your exclusions (folders, files, and patterns
-  such as `*.psd`), and your custom rules folder.
+  limits, how long to keep scan snapshots, health check thresholds, your
+  exclusions (folders, files, and patterns such as `*.psd`), and your custom
+  rules folder.
 
 When the app isn't running as administrator, it says so and offers **Restart
 as administrator** for the fast MFT scan and admin-only cleaning.
@@ -260,6 +279,22 @@ own, nothing is ticked by default, and contents are never read:
 
 Browser history, cookies, saved form data, and sessions aren't included yet.
 Browser **caches** are cleaned in the Cleaner tab.
+
+### Health check
+
+The health check on Home is read-only: it never changes anything, and each
+problem links to the tab where it can be fixed. Every check is green (Good),
+yellow (Attention), red (Problem), or Unknown, always shown with a label.
+
+| Check | Source | Yellow / red (defaults, change them in Settings) |
+|---|---|---|
+| Disk space | Each fixed drive's free space | Under 15% free / under 5% |
+| Junk | The last junk scan | Over 5 GB cleanable / over 20 GB |
+| Startup apps | The Startup tab | Over 10 turned on / over 20 |
+| Drive health | Windows' own drive health report, plus wear and SMART sector counts when Windows lets the app read them (usually as administrator) | A warning, SSD wear over 80%, or reallocated, pending, or unreadable sectors / Windows reports the drive is failing |
+| Temperatures | Not available yet: reading CPU and GPU sensors needs a hardware driver, which the app doesn't install | Always "Unknown" |
+| App updates | The last check in the Updates tab | Any update available |
+| Recovery bin | The recovery bin | 90% of its size limit |
 
 ### Secure delete
 

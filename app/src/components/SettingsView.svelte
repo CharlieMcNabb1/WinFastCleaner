@@ -1,7 +1,7 @@
 <script lang="ts">
   import { type Backend, backend, errorMessage } from "../lib/backend.ts";
   import { plural } from "../lib/cleaner.ts";
-  import type { AppInfo, Exclusion, ExclusionKind, Settings, SettingsView } from "../lib/types.ts";
+  import type { AppInfo, Exclusion, ExclusionKind, HealthThresholds, Settings, SettingsView } from "../lib/types.ts";
   import Icon, { type IconName } from "./Icon.svelte";
 
   let { info, active }: { info: AppInfo | null; active: boolean } = $props();
@@ -98,6 +98,12 @@
     void update((s) => (s.bin[field] = n));
   }
 
+  function setHealth(field: keyof HealthThresholds, raw: string) {
+    const n = Number(raw);
+    if (!Number.isInteger(n)) return;
+    void update((s) => (s.health[field] = n));
+  }
+
   function setMaxGb(raw: string) {
     const n = Number(raw);
     if (!Number.isFinite(n) || n <= 0) return;
@@ -186,6 +192,32 @@
       <div class="grid">
         <label for="snap-days">Keep snapshots for</label>
         <span><input id="snap-days" type="number" min="1" max="3650" value={s.snapshotDays} onchange={(e) => setSnapshotDays(e.currentTarget.value)} /> days</span>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="set-health">
+      <h2 id="set-health">Health check</h2>
+      <p class="muted hint">When each check on Home turns yellow (attention) or red (problem).</p>
+      <div class="grid">
+        <span>Free space on a drive</span>
+        <span>
+          yellow below <input aria-label="Free space, yellow below (percent)" type="number" min="2" max="99" value={s.health.diskFreeYellowPct} onchange={(e) => setHealth("diskFreeYellowPct", e.currentTarget.value)} /> %,
+          red below <input aria-label="Free space, red below (percent)" type="number" min="1" max="98" value={s.health.diskFreeRedPct} onchange={(e) => setHealth("diskFreeRedPct", e.currentTarget.value)} /> %
+        </span>
+        <span>Junk that can be cleaned</span>
+        <span>
+          yellow above <input aria-label="Junk, yellow above (GB)" type="number" min="1" value={s.health.junkYellowGb} onchange={(e) => setHealth("junkYellowGb", e.currentTarget.value)} /> GB,
+          red above <input aria-label="Junk, red above (GB)" type="number" min="2" value={s.health.junkRedGb} onchange={(e) => setHealth("junkRedGb", e.currentTarget.value)} /> GB
+        </span>
+        <span>Apps starting at sign-in</span>
+        <span>
+          yellow above <input aria-label="Startup apps, yellow above" type="number" min="1" value={s.health.startupYellow} onchange={(e) => setHealth("startupYellow", e.currentTarget.value)} />,
+          red above <input aria-label="Startup apps, red above" type="number" min="2" max="1000" value={s.health.startupRed} onchange={(e) => setHealth("startupRed", e.currentTarget.value)} />
+        </span>
+        <label for="health-bin">Recovery bin full</label>
+        <span><input id="health-bin" type="number" min="50" max="100" value={s.health.binYellowPct} onchange={(e) => setHealth("binYellowPct", e.currentTarget.value)} /> % of its limit (yellow)</span>
+        <label for="health-wear">SSD wear</label>
+        <span><input id="health-wear" type="number" min="1" max="100" value={s.health.ssdWearYellowPct} onchange={(e) => setHealth("ssdWearYellowPct", e.currentTarget.value)} /> % of rated life used (yellow)</span>
       </div>
     </section>
 
@@ -292,6 +324,9 @@
   }
   .grid input {
     width: 90px;
+  }
+  .grid span input {
+    width: 70px;
   }
   .exclusions {
     list-style: none;

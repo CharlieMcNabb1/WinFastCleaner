@@ -413,7 +413,11 @@ fn check(id: CheckId, title: &str, status: Status, summary: String) -> Check {
 }
 
 fn plural(n: u64, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
+    format!(
+        "{} {}",
+        crate::format::format_count(n),
+        if n == 1 { one } else { many }
+    )
 }
 
 fn disk_space(drives: &[DriveInfo], t: &Thresholds) -> Check {
@@ -830,6 +834,14 @@ mod tests {
         assert_eq!(junk(Some(&j(6)), &t).status, Status::Yellow);
         assert_eq!(junk(Some(&j(21)), &t).status, Status::Red);
         assert_eq!(junk(Some(&j(21)), &t).as_of, Some(1));
+        let big = JunkSummary {
+            files: 3341,
+            ..j(1)
+        };
+        assert_eq!(
+            junk(Some(&big), &t).summary,
+            "1.0 GB can be cleaned (3,341 files)."
+        );
 
         assert_eq!(startup(Some(10), &t).status, Status::Green);
         assert_eq!(startup(Some(11), &t).status, Status::Yellow);

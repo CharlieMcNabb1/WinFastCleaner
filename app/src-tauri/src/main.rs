@@ -12,10 +12,13 @@ mod cleaning;
 mod commands;
 mod files;
 mod grew_cmds;
+mod health_cmds;
 mod privacy_cmds;
 mod recover;
 mod settings_cmds;
+mod startup_cmds;
 mod state;
+mod updates_cmds;
 
 fn main() {
     tauri::Builder::default()
@@ -59,6 +62,13 @@ fn main() {
             grew_cmds::compare_snapshots,
             privacy_cmds::privacy_survey,
             privacy_cmds::privacy_clear,
+            startup_cmds::startup_list,
+            startup_cmds::startup_set_enabled,
+            updates_cmds::updates_status,
+            updates_cmds::updates_list,
+            updates_cmds::updates_apply,
+            updates_cmds::updates_cancel,
+            health_cmds::health_check,
         ])
         .run(tauri::generate_context!())
         .expect("error while running WinFastCleaner");
