@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-treemap"
+description = "Enables the treemap command without any pre-configured scope."
+commands.allow = ["treemap"]
+
+[[permission]]
+identifier = "deny-treemap"
+description = "Denies the treemap command without any pre-configured scope."
+commands.deny = ["treemap"]
