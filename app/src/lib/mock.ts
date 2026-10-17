@@ -15,11 +15,13 @@ import type {
   FoundFile,
   HealthView,
   JunkItem,
+  LastRun,
   NodeDetail,
   NodeView,
   PlanView,
   RuleView,
   ScanSummary,
+  ScheduleView,
   ServiceItem,
   SettingsView,
   StartupItem,
@@ -394,6 +396,22 @@ export function createMockBackend(): Backend {
   let applying = false;
   let cancelApply = false;
   let junkScanned: { at: number; bytes: number; files: number } | null = null;
+  let taskExists = false;
+  let trayRunning = false;
+  const lastRun: LastRun = {
+    startedAt: 1_791_550_800,
+    finishedAt: 1_791_550_806,
+    ok: true,
+    message: "Cleaned 1.4 GB (2,118 files). Skipped 1 rule (see the details).",
+    deletedCount: 2118,
+    deletedBytes: 1.4 * GB,
+    binnedCount: 0,
+    binnedBytes: 0,
+    skippedCount: 3,
+    freedBytes: 1.4 * GB,
+    batchId: null,
+    notReady: [{ rule: "Windows Update downloads", reason: "needs administrator rights" }],
+  };
   let settingsView: SettingsView = {
     settings: {
       exclusions: [{ kind: "folder", value: "C:\\Users\\test-user\\Projects\\keep" }],
@@ -411,6 +429,17 @@ export function createMockBackend(): Backend {
         binYellowPct: 90,
         ssdWearYellowPct: 80,
       },
+      schedule: {
+        enabled: false,
+        frequency: "weekly",
+        weekday: "sunday",
+        hour: 12,
+        minute: 0,
+        includeOptional: false,
+        rules: [],
+      },
+      tray: false,
+      theme: "system",
     },
     dataDir: "C:\\Users\\test-user\\AppData\\Local\\WinFastCleaner",
     rulesDir: "C:\\Users\\test-user\\AppData\\Local\\WinFastCleaner\\rules",
@@ -745,7 +774,14 @@ export function createMockBackend(): Backend {
     },
 
     getSettings: async () => settingsView,
-    saveSettings: async (settings) => {
+    saveSettings: async (incoming) => {
+      // Like the real backend: the schedule and the tray only change
+      // through their own commands.
+      const settings = {
+        ...incoming,
+        schedule: settingsView.settings.schedule,
+        tray: settingsView.settings.tray,
+      };
       for (const e of settings.exclusions) {
         if (e.kind !== "pattern" && !/^[A-Za-z]:\\/.test(e.value)) throw new Error(`\`${e.value}\` is not a usable path.`);
       }
@@ -1013,6 +1049,33 @@ export function createMockBackend(): Backend {
       const order = ["unknown", "green", "yellow", "red"] as const;
       const overall = checks.reduce((w, c) => (order.indexOf(c.status) > order.indexOf(w) ? c.status : w), "unknown" as HealthView["overall"]);
       return { checks, overall };
+    },
+    scheduleStatus: async (): Promise<ScheduleView> => ({
+      schedule: structuredClone(settingsView.settings.schedule),
+      taskExists: settingsView.settings.schedule.enabled ? taskExists : false,
+      programFound: true,
+      last: lastRun,
+      rules: rules.filter((r) => r.tier !== "red").map((r) => ({ id: r.id, name: r.name, group: r.group, tier: r.tier })),
+    }),
+    scheduleSave: async (schedule) => {
+      await delay(300);
+      if (schedule.hour > 23 || schedule.minute > 59) throw new Error("scheduled cleaning: the time of day is not valid");
+      taskExists = schedule.enabled;
+      settingsView = { ...settingsView, settings: { ...settingsView.settings, schedule: structuredClone(schedule) } };
+      return {
+        schedule: structuredClone(schedule),
+        taskExists,
+        programFound: true,
+        last: lastRun,
+        rules: rules.filter((r) => r.tier !== "red").map((r) => ({ id: r.id, name: r.name, group: r.group, tier: r.tier })),
+      };
+    },
+    trayStatus: async () => ({ enabled: settingsView.settings.tray, running: trayRunning, programFound: true }),
+    traySet: async (enabled) => {
+      await delay(200);
+      trayRunning = enabled;
+      settingsView = { ...settingsView, settings: { ...settingsView.settings, tray: enabled } };
+      return { enabled, running: trayRunning, programFound: true };
     },
   };
 }

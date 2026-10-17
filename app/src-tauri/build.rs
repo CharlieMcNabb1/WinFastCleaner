@@ -48,6 +48,10 @@ fn main() {
             "updates_apply",
             "updates_cancel",
             "health_check",
+            "schedule_status",
+            "schedule_save",
+            "tray_status",
+            "tray_set",
         ]),
     ))
     .expect("failed to run tauri-build");

@@ -313,7 +313,14 @@ export interface Settings {
   secureDelete: boolean;
   /** When health checks turn yellow or red. */
   health: HealthThresholds;
+  /** Changed only through scheduleSave (it also updates the task). */
+  schedule: Schedule;
+  /** Changed only through traySet (it also updates the sign-in entry). */
+  tray: boolean;
+  theme: Theme;
 }
+
+export type Theme = "system" | "light" | "dark";
 
 export interface SettingsView {
   settings: Settings;
@@ -551,3 +558,58 @@ export interface HealthThresholds {
 
 /** Where the Cleaner tab should go when opened from another tab. */
 export type CleanerFocus = { kind: "rule"; ruleId: string; seq: number } | { kind: "safe"; seq: number };
+
+// ----------------------------------------------------------------- automation
+// (see crates/core/src/schedule.rs and app/src-tauri/src/automation_cmds.rs)
+
+export type Frequency = "daily" | "weekly";
+export type Weekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
+
+export interface Schedule {
+  enabled: boolean;
+  frequency: Frequency;
+  weekday: Weekday;
+  hour: number;
+  minute: number;
+  /** Also clean optional (yellow) items; they go to the recovery bin. */
+  includeOptional: boolean;
+  /** Only these rules; empty means every rule in the chosen tiers. */
+  rules: string[];
+}
+
+export interface LastRun {
+  startedAt: number;
+  finishedAt: number;
+  ok: boolean;
+  message: string;
+  deletedCount: number;
+  deletedBytes: number;
+  binnedCount: number;
+  binnedBytes: number;
+  skippedCount: number;
+  freedBytes: number;
+  batchId: string | null;
+  notReady: { rule: string; reason: string }[];
+}
+
+export interface RuleChoice {
+  id: string;
+  name: string;
+  group: string;
+  tier: Tier;
+}
+
+export interface ScheduleView {
+  schedule: Schedule;
+  /** Whether the Task Scheduler task exists (null when it can't be read). */
+  taskExists: boolean | null;
+  programFound: boolean;
+  last: LastRun | null;
+  rules: RuleChoice[];
+}
+
+export interface TrayView {
+  enabled: boolean;
+  running: boolean;
+  programFound: boolean;
+}

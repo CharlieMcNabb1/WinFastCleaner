@@ -8,7 +8,11 @@
 │  Rust commands (app/src-tauri/src: commands, cleaning, recover, …)     │
 └────────┬───────────────────────────────────────────────────────────────┘
          │                         ┌──────────── crates/cli ─────────────┐
-         │                         │  `wfc` command-line tool            │
+         │                         │  `wfc` command-line tool, and       │
+         │                         │  `wfcw` (scheduled clean, no window)│
+         │                         └──────────────┬──────────────────────┘
+         │                         ┌──────────── crates/tray ────────────┐
+         │                         │  `wfc-tray` tray monitor (Win32)    │
          ▼                         └──────────────┬──────────────────────┘
 ┌──────────────────────────── crates/core ───────────────────────────────┐
 │  scan.rs      picks the MFT reader or the walker, progress, summary    │
@@ -32,6 +36,9 @@
 │  services.rs  auto-start services (read-only)                          │
 │  winget.rs    app updates: find winget, parse its table, upgrade       │
 │  health.rs    health checks: pure evaluate() + cached inputs           │
+│  schedule.rs  scheduled cleaning: settings, task XML, the run          │
+│  monitor.rs   tray notifications: what is due, once a day per kind     │
+│  integration.rs  the task and the tray's sign-in entry; removal        │
 │  wincom.rs    COM: Task Scheduler, WMI, shell links (Windows)          │
 │  winreg.rs    registry access (Windows)                                │
 │  log.rs       local cleanup log (JSON lines, rotated)                  │
@@ -226,6 +233,30 @@ the Disk tab's scan of the same root) they start instantly.
   `updates-summary.json` in the data folder, so the health check (and later
   the tray) can use them without scanning again.
 
+## Scheduled cleaning, the tray, and the installer
+
+- `schedule::task_xml` builds the Task Scheduler definition: a calendar
+  trigger whose start boundary is a fixed past date at the chosen local
+  time (no time zone, so it follows the PC's clock), interactive token,
+  least privilege, `StartWhenAvailable`, one hour limit, no overlapping
+  runs. `wincom::register_task` registers it under `\WinFastCleaner`.
+- `schedule::run` loads the settings and rules, selects rules with
+  `select_rules` (never red), scans, plans, filters the plan for red again,
+  executes, and writes `scheduled-last.json`. `wfc clean --scheduled` and
+  `wfcw` (a GUI-subsystem binary, so no console window flashes) both call it.
+- `wfc-tray` (`crates/tray`) is a plain Win32 program: a hidden top-level
+  window (so Explorer's "taskbar created" broadcast re-adds the icon), a
+  `Shell_NotifyIcon` icon with a menu, and a timer. Checks run on a worker
+  thread (`health::gather` + `evaluate`, `monitor::alerts`) and post their
+  result back to the window, which shows notifications through the icon.
+- The installer is Tauri's NSIS bundle (`app/src-tauri/tauri.bundle.conf.json`),
+  per machine, with `wfc.exe`, `wfcw.exe`, and `wfc-tray.exe` as extra
+  binaries next to the app. `windows/hooks.nsh` closes the tray before an
+  upgrade and runs `wfc remove-integration` before uninstalling.
+  `scripts/build-installer.ps1` builds it and `scripts/test-installer.ps1`
+  installs, checks, and uninstalls it in CI; `release.yml` publishes it on
+  version tags with SHA-256 checksums as a draft release.
+
 ## Elevation
 
 The app runs unelevated by default. Admin rights are needed for the fast
@@ -284,5 +315,8 @@ never links. Phase 3's "What grew" view compares two snapshots.
 | Startup items turned off and on in a throwaway `HKCU` key and temp folder (Run values and shortcuts are never deleted); reading the real lists, services, and drive health; a throwaway scheduled task registered, toggled, and deleted | `crates/core/src/{startup,wincom}.rs`, `health.rs` | Windows CI |
 | winget table parsing (translated and wide-character headers, truncated ids, second tables), id validation, health thresholds, SMART parsing | `crates/core/src/{winget,health}.rs` | Windows + Linux CI |
 | CLI end-to-end, including dry run, clean, restore, finders, and What grew in temp folders | `crates/cli/tests/cli.rs` | Windows + Linux CI |
-| Frontend formatting, treemap layout, cleaner selection logic, health/startup/update helpers | `app/src/lib/*.test.ts` | Windows CI |
+| Scheduled cleaning: rule selection never includes red, task XML, safe-only and optional runs through `wfc` and `wfcw`, and a real Task Scheduler task that runs and cleans safe items only | `crates/core/src/schedule.rs`, `crates/cli/tests/cli.rs` | Windows + Linux CI (the real task on Windows) |
+| Tray notifications: thresholds, once a day per kind, only newly red checks | `crates/core/src/monitor.rs` | Windows + Linux CI |
+| The installer installs, works, and uninstalls cleanly (task and sign-in entry removed, data folder kept) | `scripts/test-installer.ps1` | Windows CI |
+| Frontend formatting, treemap layout, cleaner selection logic, health/startup/update helpers, next scheduled run | `app/src/lib/*.test.ts` | Windows CI |
 | UI in a browser with fake data | `npm run dev:mock` | Local |

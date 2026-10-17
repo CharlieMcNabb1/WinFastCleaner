@@ -1,10 +1,24 @@
 <script lang="ts">
   import { type Backend, backend, errorMessage } from "../lib/backend.ts";
   import { plural } from "../lib/cleaner.ts";
-  import type { AppInfo, Exclusion, ExclusionKind, HealthThresholds, Settings, SettingsView } from "../lib/types.ts";
+  import { applyTheme } from "../lib/theme.svelte.ts";
+  import type {
+    AppInfo,
+    Exclusion,
+    ExclusionKind,
+    HealthThresholds,
+    Settings,
+    SettingsView,
+    Theme,
+  } from "../lib/types.ts";
+  import AutomationSettings from "./AutomationSettings.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
 
-  let { info, active }: { info: AppInfo | null; active: boolean } = $props();
+  let {
+    info,
+    active,
+    onNavigate,
+  }: { info: AppInfo | null; active: boolean; onNavigate: (tab: "recover") => void } = $props();
 
   const GB = 1024 ** 3;
   const KIND_ICON: Record<ExclusionKind, IconName> = { folder: "folder", file: "file", pattern: "pattern" };
@@ -98,6 +112,11 @@
     void update((s) => (s.bin[field] = n));
   }
 
+  function setTheme(theme: Theme) {
+    applyTheme(theme);
+    void update((s) => (s.theme = theme));
+  }
+
   function setHealth(field: keyof HealthThresholds, raw: string) {
     const n = Number(raw);
     if (!Number.isInteger(n)) return;
@@ -139,6 +158,20 @@
 
   {#if view}
     {@const s = view.settings}
+    <section class="card" aria-labelledby="set-theme">
+      <h2 id="set-theme">Appearance</h2>
+      <div class="grid">
+        <label for="theme">Theme</label>
+        <span>
+          <select id="theme" value={s.theme} onchange={(e) => setTheme(e.currentTarget.value as Theme)}>
+            <option value="system">Same as Windows</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </span>
+      </div>
+    </section>
+
     <section class="card" aria-labelledby="set-cleaning">
       <h2 id="set-cleaning">Cleaning</h2>
       <label class="check">
@@ -151,6 +184,8 @@
         </span>
       </label>
     </section>
+
+    <AutomationSettings {info} {active} {onNavigate} />
 
     <section class="card" aria-labelledby="set-secure">
       <h2 id="set-secure">Secure delete</h2>

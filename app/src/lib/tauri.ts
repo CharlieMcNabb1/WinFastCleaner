@@ -87,5 +87,10 @@ export function createTauriBackend(): Backend {
     updatesCancel: () => invoke("updates_cancel"),
 
     healthCheck: () => invoke("health_check"),
+
+    scheduleStatus: () => invoke("schedule_status"),
+    scheduleSave: (schedule) => invoke("schedule_save", { schedule }),
+    trayStatus: () => invoke("tray_status"),
+    traySet: (enabled) => invoke("tray_set", { enabled }),
   };
 }

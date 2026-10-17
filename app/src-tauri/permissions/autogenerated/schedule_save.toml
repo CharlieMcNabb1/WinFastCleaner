@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-schedule-save"
+description = "Enables the schedule_save command without any pre-configured scope."
+commands.allow = ["schedule_save"]
+
+[[permission]]
+identifier = "deny-schedule-save"
+description = "Denies the schedule_save command without any pre-configured scope."
+commands.deny = ["schedule_save"]

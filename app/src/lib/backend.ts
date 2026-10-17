@@ -22,6 +22,8 @@ import type {
   RestoreReport,
   RuleSelection,
   ScanEvent,
+  Schedule,
+  ScheduleView,
   Settings,
   SettingsView,
   SnapshotView,
@@ -30,6 +32,7 @@ import type {
   Trace,
   TraceInfo,
   TraceResult,
+  TrayView,
   TreemapNode,
   UpdateEvent,
   UpdatesStatus,
@@ -112,6 +115,14 @@ export interface Backend {
 
   // Health check (read-only)
   healthCheck(): Promise<HealthView>;
+
+  // Scheduled cleaning and the tray monitor
+  scheduleStatus(): Promise<ScheduleView>;
+  /** Saves the schedule and creates, updates, or removes the task. */
+  scheduleSave(schedule: Schedule): Promise<ScheduleView>;
+  trayStatus(): Promise<TrayView>;
+  /** Turns the tray monitor (and its sign-in entry) on or off. */
+  traySet(enabled: boolean): Promise<TrayView>;
 }
 
 let instance: Promise<Backend> | null = null;

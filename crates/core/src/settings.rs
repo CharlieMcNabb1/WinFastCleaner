@@ -72,6 +72,22 @@ pub struct Settings {
     pub secure_delete: bool,
     /// When health checks turn yellow or red.
     pub health: crate::health::Thresholds,
+    /// Automatic cleaning through Windows Task Scheduler. Off by default.
+    pub schedule: crate::schedule::Schedule,
+    /// The tray monitor (its own small program, started at sign-in).
+    pub tray: bool,
+    /// "system" (follow Windows), "light", or "dark".
+    pub theme: Theme,
+}
+
+/// The app's color theme.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Theme {
+    #[default]
+    System,
+    Light,
+    Dark,
 }
 
 impl Default for Settings {
@@ -83,6 +99,9 @@ impl Default for Settings {
             snapshot_days: crate::snapshot::DEFAULT_RETENTION_DAYS,
             secure_delete: false,
             health: crate::health::Thresholds::default(),
+            schedule: crate::schedule::Schedule::default(),
+            tray: false,
+            theme: Theme::System,
         }
     }
 }
@@ -133,6 +152,9 @@ impl Settings {
         self.health
             .validate()
             .map_err(|e| Error::InvalidInput(format!("health check thresholds: {e}")))?;
+        self.schedule
+            .validate()
+            .map_err(|e| Error::InvalidInput(format!("scheduled cleaning: {e}")))?;
         Ok(())
     }
 
@@ -144,6 +166,10 @@ impl Settings {
         }
         if self.health.validate().is_err() {
             self.health = crate::health::Thresholds::default();
+        }
+        if self.schedule.validate().is_err() {
+            // An unreadable schedule never runs.
+            self.schedule = crate::schedule::Schedule::default();
         }
         if self.validate().is_err() {
             self.bin = BinLimits::default();

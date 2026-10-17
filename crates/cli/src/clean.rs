@@ -12,6 +12,7 @@ use cleaner_core::format::{format_size, unix_to_utc};
 use cleaner_core::progress::CancelToken;
 use cleaner_core::recovery::{Conflict, RecoveryStore};
 use cleaner_core::rules::{self, Rule, RuleError, RuleSet, Tier};
+use cleaner_core::schedule;
 use cleaner_core::settings::{Exclusions, Settings};
 
 use crate::{CliResult, files, group, truncate};
@@ -70,6 +71,10 @@ pub struct CleanArgs {
     /// Print JSON instead of text.
     #[arg(long)]
     json: bool,
+    /// Run the scheduled cleaning now, as set up in the app's Settings (what
+    /// the scheduled task runs). Never asks; never cleans review items.
+    #[arg(long, conflicts_with_all = ["rules", "dry_run", "list", "yes", "secure"])]
+    scheduled: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -290,6 +295,25 @@ fn print_scan(scan: &JunkScan) {
 
 pub fn clean_cmd(args: CleanArgs) -> CliResult {
     let data = data_dir()?;
+    if args.scheduled {
+        let last = schedule::run(&data, args.rules_dir.as_deref(), &CancelToken::new());
+        if args.json {
+            println!("{}", serde_json::to_string_pretty(&last)?);
+        } else {
+            println!("{}", last.message);
+            for n in &last.not_ready {
+                println!("  skipped {}: {}", n.rule, n.reason);
+            }
+            if let Some(b) = &last.batch_id {
+                println!("Undo with: wfc recover restore {b}");
+            }
+        }
+        return if last.ok {
+            Ok(())
+        } else {
+            Err(last.message.into())
+        };
+    }
     let settings = Settings::load(&data);
     let mut ctx = context(&settings);
     let set = load_rules(&ctx, &data, args.rules_dir.as_deref());

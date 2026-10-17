@@ -87,7 +87,7 @@ pub enum Status {
     Red,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CheckId {
     DiskSpace,
@@ -361,6 +361,48 @@ pub fn read_disks() -> Option<Vec<DiskHealth>> {
 #[cfg(not(windows))]
 pub fn read_disks() -> Option<Vec<DiskHealth>> {
     None
+}
+
+// ------------------------------------------------------------ gathering
+
+/// Gathers every input from this PC: drives, the cached junk and update
+/// summaries, the startup list, drive health, and the recovery bin. Only
+/// reads; drive health and the startup list can take a second or two.
+pub fn gather(data_dir: &Path, settings: &crate::settings::Settings) -> Inputs {
+    let startup = crate::startup::list(&crate::startup::Locations::system());
+    Inputs {
+        drives: crate::platform::drives(),
+        junk: load_junk(data_dir),
+        startup_enabled: Some(startup.enabled_count()),
+        disks: read_disks(),
+        winget_installed: crate::winget::find().is_some(),
+        updates: load_updates(data_dir),
+        bin: crate::recovery::RecoveryStore::open(data_dir, settings.bin)
+            .usage()
+            .ok(),
+    }
+}
+
+/// Looks for junk with every rule (read-only) and caches the summary.
+pub fn refresh_junk(
+    data_dir: &Path,
+    settings: &crate::settings::Settings,
+    cancel: &crate::progress::CancelToken,
+) -> Option<JunkSummary> {
+    let ctx =
+        crate::cleaner::Context::system(crate::settings::Exclusions::new(&settings.exclusions));
+    let set = crate::rules::load(
+        Some(&crate::paths::user_rules_dir(data_dir)),
+        &ctx.vars,
+        &ctx.guard,
+    );
+    let scan = crate::cleaner::scan(&set.rules, &ctx, cancel);
+    if cancel.is_cancelled() {
+        return None;
+    }
+    let summary = JunkSummary::from_scan(&scan);
+    let _ = save_junk(data_dir, &summary);
+    Some(summary)
 }
 
 // ------------------------------------------------------------ evaluate
