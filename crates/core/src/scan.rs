@@ -93,13 +93,16 @@ pub fn scan(
 
     let result = std::thread::scope(|s| {
         let ticker = s.spawn(|| {
-            while !finished.load(Ordering::Relaxed) {
+            while !finished.load(Ordering::Acquire) {
                 progress(&counters.snapshot());
                 std::thread::park_timeout(Duration::from_millis(100));
             }
+            // Always end with the final numbers, so even a scan that finishes
+            // before the first tick reports its progress.
+            progress(&counters.snapshot());
         });
         let r = run(&root, opts, &counters, cancel);
-        finished.store(true, Ordering::Relaxed);
+        finished.store(true, Ordering::Release);
         ticker.thread().unpark();
         r
     });
@@ -249,6 +252,27 @@ mod tests {
         assert!(*updates.lock().unwrap() >= 1);
         assert_eq!(scan.summary.method, ScanMethod::Walk);
         assert!(scan.summary.mft_unavailable.is_some());
+    }
+
+    /// A scan that finishes before the first progress tick must still report
+    /// progress, and the last report must carry the final numbers.
+    #[test]
+    fn very_fast_scans_still_report_final_progress() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("only.bin"), b"x").unwrap();
+        for _ in 0..200 {
+            let reports = Mutex::new(Vec::new());
+            let done = scan(
+                tmp.path(),
+                &WALK_ONLY,
+                &|p| reports.lock().unwrap().push(p.files),
+                &CancelToken::new(),
+            )
+            .unwrap();
+            let reports = reports.into_inner().unwrap();
+            assert!(!reports.is_empty(), "no progress reported");
+            assert_eq!(reports.last(), Some(&done.summary.files));
+        }
     }
 
     #[test]
