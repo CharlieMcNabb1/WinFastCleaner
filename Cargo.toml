@@ -26,6 +26,8 @@ tempfile = "3.27"
 thiserror = "2.0"
 toml = "1.1"
 windows-sys = "0.61"
+# COM (Task Scheduler, WMI, shell links). The same version Tauri already uses.
+windows = "0.62.2"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

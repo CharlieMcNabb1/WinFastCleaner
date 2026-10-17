@@ -70,6 +70,8 @@ pub struct Settings {
     /// Offer secure delete (overwrite before deleting) when cleaning and
     /// when deleting from the recovery bin. Off by default.
     pub secure_delete: bool,
+    /// When health checks turn yellow or red.
+    pub health: crate::health::Thresholds,
 }
 
 impl Default for Settings {
@@ -80,6 +82,7 @@ impl Default for Settings {
             bin: BinLimits::default(),
             snapshot_days: crate::snapshot::DEFAULT_RETENTION_DAYS,
             secure_delete: false,
+            health: crate::health::Thresholds::default(),
         }
     }
 }
@@ -127,6 +130,9 @@ impl Settings {
                 "snapshots must be kept between 1 and 3650 days".into(),
             ));
         }
+        self.health
+            .validate()
+            .map_err(|e| Error::InvalidInput(format!("health check thresholds: {e}")))?;
         Ok(())
     }
 
@@ -135,6 +141,9 @@ impl Settings {
         self.exclusions.truncate(MAX_EXCLUSIONS);
         if !(1..=3650).contains(&self.snapshot_days) {
             self.snapshot_days = crate::snapshot::DEFAULT_RETENTION_DAYS;
+        }
+        if self.health.validate().is_err() {
+            self.health = crate::health::Thresholds::default();
         }
         if self.validate().is_err() {
             self.bin = BinLimits::default();
@@ -280,6 +289,9 @@ mod tests {
         let mut bad = s.clone();
         bad.bin.max_percent = 0;
         assert!(bad.validate().is_err());
+        let mut bad = s.clone();
+        bad.health.startup_red = 1;
+        assert!(bad.validate().is_err());
 
         // A hand-edited file with junk keeps the valid parts.
         std::fs::write(
@@ -290,5 +302,23 @@ mod tests {
         let loaded = Settings::load(tmp.path());
         assert!(loaded.green_to_bin);
         assert_eq!(loaded.exclusions.len(), 1);
+
+        // Bad thresholds fall back to the defaults; good ones are kept.
+        std::fs::write(
+            tmp.path().join("settings.json"),
+            r#"{"health": {"startupYellow": 30, "startupRed": 5}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            Settings::load(tmp.path()).health,
+            crate::health::Thresholds::default()
+        );
+        std::fs::write(
+            tmp.path().join("settings.json"),
+            r#"{"health": {"startupYellow": 12}}"#,
+        )
+        .unwrap();
+        assert_eq!(Settings::load(tmp.path()).health.startup_yellow, 12);
+        assert_eq!(Settings::load(tmp.path()).health.startup_red, 20);
     }
 }
