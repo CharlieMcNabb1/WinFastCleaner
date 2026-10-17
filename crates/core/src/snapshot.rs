@@ -119,6 +119,21 @@ impl Snapshot {
     }
 }
 
+/// The snapshots folder inside the app's data folder.
+pub fn dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("snapshots")
+}
+
+/// Saves a snapshot of `scan` in the data folder and deletes snapshots older
+/// than `retention_days`. Returns the new snapshot's path.
+pub fn record(data_dir: &Path, scan: &Scan, retention_days: u32) -> Result<PathBuf> {
+    let dir = dir(data_dir);
+    let snap = Snapshot::from_scan(scan, DEFAULT_MIN_FOLDER_SIZE, DEFAULT_MAX_DEPTH);
+    let path = save(&dir, &snap)?;
+    let _ = prune(&dir, retention_days, snap.taken_at);
+    Ok(path)
+}
+
 /// Saves a snapshot into `dir` (created if needed) and returns its path.
 /// The file is written to a temporary name first and then renamed, so a
 /// crash never leaves a half-written snapshot.

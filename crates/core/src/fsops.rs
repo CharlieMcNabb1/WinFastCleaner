@@ -68,6 +68,82 @@ impl Opened {
     }
 }
 
+/// Which file an open handle refers to (volume and file number), so two
+/// names of one hard-linked file can be told apart from two copies.
+pub type FileId = (u64, u128);
+
+/// Opens a regular file for reading without following links. Links,
+/// folders, and cloud placeholders (whose contents would be downloaded by
+/// reading them) are refused.
+pub fn open_read(path: &Path) -> io::Result<(std::fs::File, FileId)> {
+    read_imp::open(path)
+}
+
+#[cfg(windows)]
+mod read_imp {
+    use super::FileId;
+    use std::fs::File;
+    use std::io;
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use std::path::Path;
+
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_OFFLINE,
+        FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS, FILE_ATTRIBUTE_RECALL_ON_OPEN,
+        FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_SEQUENTIAL_SCAN,
+        GetFileInformationByHandle,
+    };
+
+    pub fn open(path: &Path) -> io::Result<(File, FileId)> {
+        let f = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN)
+            .open(path)?;
+        // SAFETY: a plain C struct for which all zeros is a valid value.
+        let mut bh: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+        // SAFETY: the handle is open and `bh` is a valid out-pointer.
+        if unsafe { GetFileInformationByHandle(f.as_raw_handle() as HANDLE, &mut bh) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let a = bh.dwFileAttributes;
+        if a & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
+            return Err(io::Error::other("not a regular file"));
+        }
+        if a & (FILE_ATTRIBUTE_OFFLINE
+            | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
+            | FILE_ATTRIBUTE_RECALL_ON_OPEN)
+            != 0
+        {
+            return Err(io::Error::other("cloud file (contents not on this PC)"));
+        }
+        let index = (u128::from(bh.nFileIndexHigh) << 32) | u128::from(bh.nFileIndexLow);
+        Ok((f, (u64::from(bh.dwVolumeSerialNumber), index)))
+    }
+}
+
+#[cfg(unix)]
+mod read_imp {
+    use super::FileId;
+    use std::fs::File;
+    use std::io;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    use std::path::Path;
+
+    pub fn open(path: &Path) -> io::Result<(File, FileId)> {
+        let f = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)?;
+        let md = f.metadata()?;
+        if !md.is_file() {
+            return Err(io::Error::other("not a regular file"));
+        }
+        Ok((f, (md.dev(), u128::from(md.ino()))))
+    }
+}
+
 /// Short reason for an I/O error, for "skipped" lists.
 pub fn describe_error(e: &io::Error) -> String {
     #[cfg(windows)]
@@ -381,6 +457,32 @@ mod tests {
 
         open(&b).unwrap().delete().unwrap();
         assert!(!b.exists());
+    }
+
+    #[test]
+    fn open_read_identifies_files_and_refuses_folders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("a.bin");
+        let b = tmp.path().join("b.bin");
+        std::fs::write(&a, b"same").unwrap();
+        std::fs::write(&b, b"same").unwrap();
+        let (_, id_a) = open_read(&a).unwrap();
+        let (_, id_b) = open_read(&b).unwrap();
+        assert_ne!(id_a, id_b, "two copies are two files");
+        let link = tmp.path().join("hard.bin");
+        std::fs::hard_link(&a, &link).unwrap();
+        assert_eq!(
+            open_read(&link).unwrap().1,
+            id_a,
+            "a hard link is the same file"
+        );
+        assert!(open_read(tmp.path()).is_err(), "folders are refused");
+        #[cfg(unix)]
+        {
+            let sym = tmp.path().join("sym.bin");
+            std::os::unix::fs::symlink(&a, &sym).unwrap();
+            assert!(open_read(&sym).is_err(), "symlinks are not followed");
+        }
     }
 
     #[cfg(unix)]

@@ -57,7 +57,7 @@ impl Default for BinLimits {
 
 /// All user settings. Unknown or missing fields fall back to defaults, so
 /// older and newer versions can share a settings file.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub exclusions: Vec<Exclusion>,
@@ -65,6 +65,19 @@ pub struct Settings {
     /// directly, which frees space immediately).
     pub green_to_bin: bool,
     pub bin: BinLimits,
+    /// Keep scan snapshots (for "What grew") this many days.
+    pub snapshot_days: u32,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            exclusions: Vec::new(),
+            green_to_bin: false,
+            bin: BinLimits::default(),
+            snapshot_days: crate::snapshot::DEFAULT_RETENTION_DAYS,
+        }
+    }
 }
 
 impl Settings {
@@ -105,12 +118,20 @@ impl Settings {
                 "recovery bin limits are out of range".into(),
             ));
         }
+        if !(1..=3650).contains(&self.snapshot_days) {
+            return Err(Error::InvalidInput(
+                "snapshots must be kept between 1 and 3650 days".into(),
+            ));
+        }
         Ok(())
     }
 
     fn sanitized(mut self) -> Settings {
         self.exclusions.retain(|e| validate_exclusion(e).is_ok());
         self.exclusions.truncate(MAX_EXCLUSIONS);
+        if !(1..=3650).contains(&self.snapshot_days) {
+            self.snapshot_days = crate::snapshot::DEFAULT_RETENTION_DAYS;
+        }
         if self.validate().is_err() {
             self.bin = BinLimits::default();
         }
