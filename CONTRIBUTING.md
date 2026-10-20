@@ -24,6 +24,19 @@ than in most projects. Please read the ground rules before opening a PR.
 7. **No new features outside the [roadmap](README.md#roadmap)** without an
    issue first.
 
+## AI-assisted pull requests
+
+PRs written with AI tools (Claude Code, Copilot, and so on) are welcome, on
+the same terms as any other PR:
+
+- **You are the author.** Read and understand every line before you open the
+  PR, and be ready to explain it in review. "The AI wrote it" is not an
+  answer.
+- **Tests must pass.** Run the checks below yourself; CI must be green before
+  review.
+- The ground rules above still apply, especially rule 1: an AI tool must
+  never weaken a safety rule to make something work.
+
 ## Development setup
 
 - Rust: install with [rustup](https://rustup.rs). The toolchain version is
