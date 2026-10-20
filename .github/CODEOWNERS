@@ -1,0 +1,3 @@
+# Safety-critical code and cleaning rules need owner review.
+/crates/core/ @CharlieMcNabb1
+/rules/ @CharlieMcNabb1
