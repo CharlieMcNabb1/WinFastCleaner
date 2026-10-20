@@ -74,8 +74,6 @@ The tokens are in place, but the screens haven't been restyled yet. Still to do:
 
 - Apply the scales, size bars, and tier row layout to the screens.
 - Bundle IBM Plex and switch `--font` and `--mono` to it.
-- Stop Home's health badges (`StatusBadge.svelte`) from using tier colors.
-  "Attention" currently looks like the Optional tier.
 - Retune the treemap palette (`Treemap.svelte`) around petrol, and replace its
   hardcoded stroke and fill colors (which still use the old background) with
   theme values.

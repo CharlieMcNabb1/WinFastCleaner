@@ -7,7 +7,8 @@
   let s = $derived(STATUS[status]);
 </script>
 
-<!-- Color is always paired with an icon and a label. -->
+<!-- Neutral on purpose: green/yellow/red belong to the safety tiers
+     (docs/design.md). Severity shows as emphasis, plus the icon and label. -->
 <span class="status {status}">
   <Icon name={s.icon} size={12} />
   {s.label}
@@ -17,29 +18,31 @@
   .status {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 1px 8px 1px 6px;
-    border-radius: 999px;
-    border: 1px solid currentColor;
-    font-size: 12px;
+    gap: var(--space-1);
+    padding: 1px var(--space-2) 1px 6px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    font-size: var(--text-xs);
     font-weight: 600;
     line-height: 18px;
     white-space: nowrap;
   }
   .green {
-    color: var(--tier-green);
-    background: var(--tier-green-bg);
+    color: var(--text-2);
+    background: var(--surface);
   }
   .yellow {
-    color: var(--tier-yellow);
-    background: var(--tier-yellow-bg);
+    color: var(--text);
+    background: var(--surface-3);
   }
   .red {
-    color: var(--tier-red);
-    background: var(--tier-red-bg);
+    color: var(--surface);
+    background: var(--text);
+    border-color: var(--text);
   }
   .unknown {
     color: var(--text-2);
-    background: var(--surface-2);
+    background: transparent;
+    border-style: dashed;
   }
 </style>

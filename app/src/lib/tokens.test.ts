@@ -48,6 +48,7 @@ for (const [name, tokens] of [
       ["tier-green", "tier-green-bg"],
       ["tier-yellow", "tier-yellow-bg"],
       ["tier-red", "tier-red-bg"],
+      ["text", "surface-3"], // "Attention" health badge
     ];
     for (const fg of ["text", "text-2", "accent", "tier-green", "tier-yellow", "tier-red"])
       for (const bg of ["bg", "surface", "surface-2"]) pairs.push([fg, bg]);
