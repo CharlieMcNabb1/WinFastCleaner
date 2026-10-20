@@ -20,4 +20,4 @@
 - Never run the app or `wfc` against the real system while developing; use tests and `dev:mock`.
 - Run the relevant tests before saying a change is done.
 - Small, focused changes; one concern per branch.
-- UI accent: petrol `#0E7490`. Green/yellow/red are reserved for safety tiers.
+- UI palette: monochrome greys `#FAFAF8` `#DADADA` `#B0B3B8` `#43464B` `#0F1012` (see `docs/design.md`). The primary action is near-black (near-white in dark). Green/yellow/red are reserved for safety tiers and are the only colors in the UI.
