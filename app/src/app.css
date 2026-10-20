@@ -1,36 +1,53 @@
-/* Design tokens. Light and dark themes follow the Windows setting, unless the
-   user picks one in Settings (the data-theme attribute on <html>). */
+/* Design tokens ("Ledger", see docs/design.md). Light and dark themes follow
+   the Windows setting, unless the user picks one in Settings (the data-theme
+   attribute on <html>). Text pairs must stay at least 4.5:1; tokens.test.ts
+   checks them. */
 :root {
   color-scheme: light dark;
-  --bg: #f5f6fa;
+  --bg: #f7f6f3;
   --surface: #ffffff;
-  --surface-2: #eef0f6;
-  --surface-3: #e3e7f1;
-  --border: #dde1eb;
-  --text: #1a1e29;
-  --text-2: #586174;
-  --accent: #3b5bdb;
-  --accent-2: #edf2ff;
+  --surface-2: #f1efea;
+  --surface-3: #e8e5de;
+  --border: #e2dfd8;
+  --text: #1c1b19;
+  --text-2: #5e5a52;
+  --accent: #0e7490;
+  --accent-2: #e4f1f4;
   --accent-text: #ffffff;
-  --focus: #4c6ef5;
-  --bar: #4c6ef5;
-  --bar-track: #e6e9f2;
-  --notice-bg: #eef3ff;
-  --notice-border: #c5d2fb;
-  --alert-bg: #fff8ec;
-  --alert-border: #f1d7a8;
-  --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 1px 3px rgb(16 24 40 / 10%);
+  --focus: #0e7490;
+  --bar: #0e7490;
+  --bar-track: #ece9e3;
+  --notice-bg: #eaf4f6;
+  --notice-border: #b9dae2;
+  --alert-bg: #fbf3e4;
+  --alert-border: #ebd3a6;
+  --shadow: 0 1px 2px rgb(28 27 25 / 6%), 0 2px 6px rgb(28 27 25 / 6%);
 
   /* Safety tier colors (Phase 2). Reserved for tiers only, and always
      shown together with a label or icon, never color alone. */
-  --tier-green: #2b8a3e;
-  --tier-green-bg: #ebfbee;
-  --tier-yellow: #b35c00;
-  --tier-yellow-bg: #fff4e6;
-  --tier-red: #c92a2a;
-  --tier-red-bg: #fff5f5;
+  --tier-green: #24753a;
+  --tier-green-bg: #e8f4ea;
+  --tier-yellow: #8f5600;
+  --tier-yellow-bg: #fbf0dc;
+  --tier-red: #a8261b;
+  --tier-red-bg: #fbeae7;
 
+  /* Scales, the same in both themes. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 22px;
+  --text-xl: 28px;
+  --radius-sm: 6px;
   --radius: 8px;
+  --radius-lg: 12px;
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
 }
@@ -39,61 +56,61 @@
    Settings), or when the user picked dark. Keep the two blocks the same. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #111319;
-    --surface: #181b23;
-    --surface-2: #1f232d;
-    --surface-3: #272c39;
-    --border: #2c3140;
-    --text: #e6e9f1;
-    --text-2: #9ba4b6;
-    --accent: #748ffc;
-    --accent-2: #1e2540;
-    --accent-text: #0d1020;
-    --focus: #91a7ff;
-    --bar: #748ffc;
-    --bar-track: #2a2f3d;
-    --notice-bg: #1a2135;
-    --notice-border: #33416b;
-    --alert-bg: #2a2214;
-    --alert-border: #5c4a24;
+    --bg: #121110;
+    --surface: #1a1917;
+    --surface-2: #23221f;
+    --surface-3: #2b2a26;
+    --border: #2f2d29;
+    --text: #eceae5;
+    --text-2: #a39e94;
+    --accent: #4fb3cb;
+    --accent-2: #12313a;
+    --accent-text: #06191f;
+    --focus: #4fb3cb;
+    --bar: #4fb3cb;
+    --bar-track: #2f2d29;
+    --notice-bg: #142a30;
+    --notice-border: #24505b;
+    --alert-bg: #2a2213;
+    --alert-border: #5a4622;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%);
 
-    --tier-green: #69db7c;
-    --tier-green-bg: #13261a;
-    --tier-yellow: #ffc078;
-    --tier-yellow-bg: #2b2112;
-    --tier-red: #ff8787;
-    --tier-red-bg: #2c1515;
+    --tier-green: #6bcb82;
+    --tier-green-bg: #132419;
+    --tier-yellow: #e9b25e;
+    --tier-yellow-bg: #2b2213;
+    --tier-red: #ef8a7e;
+    --tier-red-bg: #2e1816;
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #111319;
-  --surface: #181b23;
-  --surface-2: #1f232d;
-  --surface-3: #272c39;
-  --border: #2c3140;
-  --text: #e6e9f1;
-  --text-2: #9ba4b6;
-  --accent: #748ffc;
-  --accent-2: #1e2540;
-  --accent-text: #0d1020;
-  --focus: #91a7ff;
-  --bar: #748ffc;
-  --bar-track: #2a2f3d;
-  --notice-bg: #1a2135;
-  --notice-border: #33416b;
-  --alert-bg: #2a2214;
-  --alert-border: #5c4a24;
+  --bg: #121110;
+  --surface: #1a1917;
+  --surface-2: #23221f;
+  --surface-3: #2b2a26;
+  --border: #2f2d29;
+  --text: #eceae5;
+  --text-2: #a39e94;
+  --accent: #4fb3cb;
+  --accent-2: #12313a;
+  --accent-text: #06191f;
+  --focus: #4fb3cb;
+  --bar: #4fb3cb;
+  --bar-track: #2f2d29;
+  --notice-bg: #142a30;
+  --notice-border: #24505b;
+  --alert-bg: #2a2213;
+  --alert-border: #5a4622;
   --shadow: 0 1px 2px rgb(0 0 0 / 40%);
 
-  --tier-green: #69db7c;
-  --tier-green-bg: #13261a;
-  --tier-yellow: #ffc078;
-  --tier-yellow-bg: #2b2112;
-  --tier-red: #ff8787;
-  --tier-red-bg: #2c1515;
+  --tier-green: #6bcb82;
+  --tier-green-bg: #132419;
+  --tier-yellow: #e9b25e;
+  --tier-yellow-bg: #2b2213;
+  --tier-red: #ef8a7e;
+  --tier-red-bg: #2e1816;
 }
 
 :root[data-theme="light"] {
