@@ -74,6 +74,14 @@ Slate (20%, 35%, 50%) or of Slate and Silver (40%).
   - Text is at least **4.5:1**.
   - The focus ring, bars, control outlines (`--border-strong`), and alert
     borders are at least **3:1**.
+  - Control outlines only reach 3:1 on `--bg`, `--surface`, and `--surface-2`.
+    An unchecked checkbox or switch never sits directly on `--surface-3` or
+    `--accent-2`. On those fills it measures 2.8:1 (light) or less.
+  - Tier-colored text sits only on its own `-bg`, `--bg`, `--surface`, or
+    `--surface-2`, never directly on `--surface-3` or `--accent-2`. On Mist,
+    green is 4.08:1 and yellow is 4.29:1, and dark red on Slate is 3.88:1.
+  - `--text-2` on dark `--accent-2` is 4.51:1, the thinnest pass. Don't make
+    Slate lighter or Silver darker.
   - `--border` hairlines are decorative and exempt.
 - Light, dark, and "Same as Windows" all use the same token names. Only the
   values change.
@@ -98,7 +106,7 @@ Slate (20%, 35%, 50%) or of Slate and Silver (40%).
 | `--bar-track` | `#dadada` Mist | `#43464b` Slate | Empty part of a bar |
 | `--notice-bg` / `-border` | `#f0f0ef` / `#dadada` | `#212326` / `#43464b` | Info banners |
 | `--alert-bg` / `-border` | `#ffffff` / `#43464b` | `#191b1d` / `#b0b3b8` | Error banners |
-| `--shadow` | Ink at 6% | black at 40% | Raised things only |
+| `--shadow` | `0 1px 2px rgb(15 16 18 / 6%), 0 2px 6px rgb(15 16 18 / 6%)` | `0 1px 2px rgb(0 0 0 / 40%)` | Raised things only |
 | `--tier-green` / `-bg` | `#24753a` / `#e8f4ea` | `#6bcb82` / `#132419` | Safe |
 | `--tier-yellow` / `-bg` | `#8f5600` / `#fbf0dc` | `#e9b25e` / `#2b2213` | Optional |
 | `--tier-red` / `-bg` | `#a8261b` / `#fbeae7` | `#ef8a7e` / `#2e1816` | Review |
