@@ -167,7 +167,7 @@
         </div>
         <p class="muted small">You'll see the exact list before anything is removed.</p>
       {:else if junkScan.error}
-        <p class="warn">{junkScan.error}</p>
+        <p class="warn"><Icon name="alert" size={16} /> {junkScan.error}</p>
         <button class="btn" onclick={() => scanJunk()}><Icon name="refresh" /> Try again</button>
       {/if}
     </section>
@@ -193,7 +193,7 @@
               aria-valuenow={Math.round(percent(d.total - d.free, d.total))}
               aria-valuetext={`${formatPercent(d.free, d.total)} free`}
             >
-              <span class="bar-fill {status}" style:width={`${percent(d.total - d.free, d.total)}%`}></span>
+              <span class="bar-fill" style:width={`${percent(d.total - d.free, d.total)}%`}></span>
             </span>
           </li>
         {/each}
@@ -244,6 +244,9 @@
           <li>
             <span class="delta num">{signedSize(g.delta)}</span>
             <span class="ellipsis" title={g.path}><strong>{p.name}</strong> <span class="muted">{p.folder}</span></span>
+            <span class="bar-track" aria-hidden="true">
+              <span class="bar-fill" style:width={`${percent(g.delta, grew.items[0]!.delta)}%`}></span>
+            </span>
             <button class="link-btn" onclick={() => onShowInDisk(g.path, grew!.root)}>Show in Disk</button>
           </li>
         {/each}
@@ -254,38 +257,67 @@
 </section>
 
 <style>
+  .home {
+    gap: var(--space-4);
+    padding: var(--space-5);
+  }
+  .card {
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    padding: var(--space-4) var(--space-5);
+  }
+  .card p {
+    margin: 0 0 var(--space-2);
+    text-wrap: pretty;
+  }
   h2 {
     display: inline-flex;
-    gap: 6px;
+    gap: var(--space-2);
     align-items: center;
-    margin: 0 0 6px;
-    font-size: 15px;
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-md);
+    font-weight: 600;
+    text-wrap: balance;
+  }
+  .btn {
+    border-radius: var(--radius);
+    transition-property: background-color, transform;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  /* Bigger hit area without moving the text. */
+  .link-btn {
+    padding: var(--space-3) var(--space-2);
+    margin: calc(-1 * var(--space-3)) calc(-1 * var(--space-2));
   }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 12px;
+    gap: var(--space-4);
   }
-  .big {
-    margin: 4px 0 0;
-    font-size: 28px;
+  .card p.big {
+    margin: 0;
+    font-size: var(--text-xl);
     font-weight: 600;
+    line-height: 1.2;
     text-align: left;
-  }
-  .junk p {
-    margin: 0 0 6px;
   }
   .actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     flex-wrap: wrap;
-    margin: 8px 0 6px;
+    margin: var(--space-4) 0 var(--space-2);
   }
   .small {
-    font-size: 12px;
+    font-size: var(--text-xs);
   }
   .warn {
-    color: var(--tier-yellow);
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
   }
   .drives ul,
   .checks,
@@ -297,27 +329,22 @@
   .drives li {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    margin-bottom: 10px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
   }
   .drive-head {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
   }
   .right {
     margin-left: auto;
   }
-  .bar-fill.yellow {
-    background: var(--tier-yellow);
-  }
-  .bar-fill.red {
-    background: var(--tier-red);
-  }
   .card-head {
     display: flex;
-    gap: 10px;
+    gap: var(--space-3);
     align-items: center;
+    margin-bottom: var(--space-2);
   }
   .card-head h2 {
     margin: 0;
@@ -325,27 +352,33 @@
   .checks li {
     display: grid;
     grid-template-columns: 96px minmax(0, 1fr) auto;
-    gap: 12px;
+    gap: var(--space-3);
     align-items: start;
-    padding: 8px 0;
-    border-top: 1px solid var(--surface-2);
+    min-height: 52px;
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--border);
   }
   .what {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    text-wrap: pretty;
   }
   .grew li {
     display: grid;
-    grid-template-columns: 90px minmax(0, 1fr) auto;
-    gap: 12px;
+    grid-template-columns: 96px minmax(0, 1fr) 96px auto;
+    gap: var(--space-3);
     align-items: center;
-    padding: 6px 0;
-    border-top: 1px solid var(--surface-2);
+    min-height: 52px;
+    border-top: 1px solid var(--border);
   }
   .delta {
-    color: var(--tier-yellow);
     font-weight: 600;
     text-align: left;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .btn:active:not(:disabled) {
+      transform: none;
+    }
   }
 </style>
