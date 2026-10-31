@@ -54,7 +54,7 @@ escaping.
 | `exclude` | no | Patterns of files to leave alone, relative to each location. Exclude wins over include. |
 | `min_age_days` | no | Only clean files last modified more than this many days ago (0 to 3650). |
 | `requires_admin` | no | `true` if the files can only be removed with administrator rights. Without them, the rule is shown but skipped, with the reason. Default `false`. |
-| `close_apps` | no | Program file names, such as `["chrome.exe"]`. While any of them runs, the rule is skipped and you are told to close it. Nothing is ever force-closed. |
+| `close_apps` | no | Program file names, such as `["chrome.exe"]` on Windows or `["chrome"]` on Linux. While any of them runs, the rule is skipped and you are told to close it. Nothing is ever force-closed. |
 | `remove_empty_folders` | no | Remove folders inside each location that are left empty after cleaning. The location itself is always kept. Default `true`. |
 
 Text fields can't be empty or contain control characters.
@@ -74,12 +74,19 @@ Every path starts with one of these variables, then names folders inside it:
 
 | Variable | Usually |
 |---|---|
-| `%TEMP%` | `C:\Users\you\AppData\Local\Temp` |
+| `%TEMP%` | `C:\Users\you\AppData\Local\Temp` (Linux: `/tmp`) |
 | `%LOCALAPPDATA%` | `C:\Users\you\AppData\Local` |
 | `%APPDATA%` | `C:\Users\you\AppData\Roaming` |
 | `%USERPROFILE%` | `C:\Users\you` |
 | `%PROGRAMDATA%` | `C:\ProgramData` |
 | `%SYSTEMROOT%` | `C:\Windows` |
+| `%HOME%` | Linux: `/home/you` |
+| `%XDG_CACHE_HOME%` | Linux: `/home/you/.cache` (the default when it isn't set) |
+| `%XDG_CONFIG_HOME%` | Linux: `/home/you/.config` (the default when it isn't set) |
+
+A variable that doesn't exist on the running system (such as `%SYSTEMROOT%`
+on Linux) makes that path find nothing. Built-in rules come from
+`rules/linux.toml` on Linux and from the other files in `rules/` on Windows.
 
 Rules for paths:
 

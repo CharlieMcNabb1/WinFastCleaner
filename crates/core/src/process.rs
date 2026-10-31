@@ -62,6 +62,15 @@ mod imp {
                 if let Ok(comm) = std::fs::read_to_string(e.path().join("comm")) {
                     names.insert(comm.trim().to_lowercase());
                 }
+                // `comm` is cut to 15 characters and some apps rename it, so
+                // also use the program file's name (only readable for our own
+                // processes, which are the ones that matter).
+                if let Some(exe) = std::fs::read_link(e.path().join("exe"))
+                    .ok()
+                    .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()))
+                {
+                    names.insert(exe);
+                }
             }
         }
         names

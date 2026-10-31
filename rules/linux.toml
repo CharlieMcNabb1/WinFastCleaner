@@ -1,0 +1,215 @@
+# Built-in cleaning rules: Linux.
+# Rules that clean the same app as a Windows rule share its id, so a
+# schedule keeps meaning the same thing on both systems.
+# Format: docs/rule-format.md. Written from scratch for WinFastCleaner.
+
+[[rule]]
+id = "linux.temp"
+name = "Temporary files"
+group = "System"
+tier = "green"
+description = "Files that programs leave in the temporary folder while installing, updating, or running."
+lose = "Nothing. Programs recreate temporary files when they need them. Files from the last 7 days and other accounts' files are kept."
+paths = ['%TEMP%']
+min_age_days = 7
+
+[[rule]]
+id = "linux.thumbnails"
+name = "Thumbnail cache"
+group = "System"
+tier = "green"
+description = "Small preview images file managers save for pictures and videos."
+lose = "Nothing. Thumbnails are made again as you browse."
+paths = ['%XDG_CACHE_HOME%/thumbnails']
+remove_empty_folders = false
+
+[[rule]]
+id = "chrome.cache"
+name = "Google Chrome cache"
+group = "Google Chrome"
+tier = "green"
+description = "Copies of web pages, images, and scripts Chrome keeps to load sites faster."
+lose = "Nothing. Sites may load a little slower the first time. You stay signed in."
+paths = [
+    '%XDG_CACHE_HOME%/google-chrome/*/Cache',
+    '%XDG_CACHE_HOME%/google-chrome/*/Code Cache',
+    '%XDG_CONFIG_HOME%/google-chrome/*/GPUCache',
+    '%XDG_CONFIG_HOME%/google-chrome/ShaderCache',
+    '%XDG_CONFIG_HOME%/google-chrome/GrShaderCache',
+]
+close_apps = ["chrome"]
+
+[[rule]]
+id = "chromium.cache"
+name = "Chromium cache"
+group = "Chromium"
+tier = "green"
+description = "Copies of web pages, images, and scripts Chromium keeps to load sites faster."
+lose = "Nothing. Sites may load a little slower the first time. You stay signed in."
+paths = [
+    '%XDG_CACHE_HOME%/chromium/*/Cache',
+    '%XDG_CACHE_HOME%/chromium/*/Code Cache',
+    '%XDG_CONFIG_HOME%/chromium/*/GPUCache',
+    '%XDG_CONFIG_HOME%/chromium/ShaderCache',
+    '%XDG_CONFIG_HOME%/chromium/GrShaderCache',
+]
+close_apps = ["chromium"]
+
+[[rule]]
+id = "edge.cache"
+name = "Microsoft Edge cache"
+group = "Microsoft Edge"
+tier = "green"
+description = "Copies of web pages, images, and scripts Edge keeps to load sites faster."
+lose = "Nothing. Sites may load a little slower the first time. You stay signed in."
+paths = [
+    '%XDG_CACHE_HOME%/microsoft-edge/*/Cache',
+    '%XDG_CACHE_HOME%/microsoft-edge/*/Code Cache',
+    '%XDG_CONFIG_HOME%/microsoft-edge/*/GPUCache',
+    '%XDG_CONFIG_HOME%/microsoft-edge/ShaderCache',
+    '%XDG_CONFIG_HOME%/microsoft-edge/GrShaderCache',
+]
+close_apps = ["msedge"]
+
+[[rule]]
+id = "brave.cache"
+name = "Brave cache"
+group = "Brave"
+tier = "green"
+description = "Copies of web pages, images, and scripts Brave keeps to load sites faster."
+lose = "Nothing. Sites may load a little slower the first time. You stay signed in."
+paths = [
+    '%XDG_CACHE_HOME%/BraveSoftware/Brave-Browser/*/Cache',
+    '%XDG_CACHE_HOME%/BraveSoftware/Brave-Browser/*/Code Cache',
+    '%XDG_CONFIG_HOME%/BraveSoftware/Brave-Browser/*/GPUCache',
+    '%XDG_CONFIG_HOME%/BraveSoftware/Brave-Browser/ShaderCache',
+]
+close_apps = ["brave"]
+
+[[rule]]
+id = "firefox.cache"
+name = "Firefox cache"
+group = "Firefox"
+tier = "green"
+description = "Copies of web pages, images, and scripts Firefox keeps to load sites faster."
+lose = "Nothing. Sites may load a little slower the first time. You stay signed in."
+paths = [
+    '%XDG_CACHE_HOME%/mozilla/firefox/*/cache2',
+    '%XDG_CACHE_HOME%/mozilla/firefox/*/startupCache',
+]
+close_apps = ["firefox"]
+
+[[rule]]
+id = "discord.cache"
+name = "Discord cache"
+group = "Apps"
+tier = "green"
+description = "Images, videos, and web content Discord cached."
+lose = "Nothing. Discord downloads what it needs again. Your messages stay."
+paths = [
+    '%XDG_CONFIG_HOME%/discord/Cache',
+    '%XDG_CONFIG_HOME%/discord/Code Cache',
+    '%XDG_CONFIG_HOME%/discord/GPUCache',
+]
+close_apps = ["discord"]
+
+[[rule]]
+id = "vscode.cache"
+name = "Visual Studio Code cache"
+group = "Apps"
+tier = "green"
+description = "Web content, compiled code, and downloaded extension packages cached by VS Code."
+lose = "Nothing. VS Code may start a little slower once. Your settings and extensions stay."
+paths = [
+    '%XDG_CONFIG_HOME%/Code/Cache',
+    '%XDG_CONFIG_HOME%/Code/CachedData',
+    '%XDG_CONFIG_HOME%/Code/Code Cache',
+    '%XDG_CONFIG_HOME%/Code/GPUCache',
+    '%XDG_CONFIG_HOME%/Code/CachedExtensionVSIXs',
+]
+close_apps = ["code"]
+
+[[rule]]
+id = "steam.web-cache"
+name = "Steam web cache"
+group = "Apps"
+tier = "green"
+description = "Store and community pages cached by the Steam client."
+lose = "Nothing. Steam loads the pages again. Your games are not affected."
+paths = ['%HOME%/.local/share/Steam/config/htmlcache']
+close_apps = ["steam", "steamwebhelper"]
+
+[[rule]]
+id = "spotify.cache"
+name = "Spotify cache"
+group = "Apps"
+tier = "yellow"
+description = "Songs and podcasts Spotify saved to play them faster."
+lose = "Spotify streams them again, which uses data. Songs you downloaded for offline listening may need downloading again."
+paths = ['%XDG_CACHE_HOME%/spotify/Data', '%XDG_CACHE_HOME%/spotify/Storage']
+close_apps = ["spotify"]
+
+[[rule]]
+id = "dev.npm-cache"
+name = "npm cache"
+group = "Developer tools"
+tier = "yellow"
+description = "Packages npm downloaded before."
+lose = "npm downloads packages again the next time you install them."
+paths = ['%HOME%/.npm/_cacache']
+
+[[rule]]
+id = "dev.yarn-cache"
+name = "Yarn cache"
+group = "Developer tools"
+tier = "yellow"
+description = "Packages Yarn downloaded before."
+lose = "Yarn downloads packages again the next time you install them."
+paths = ['%XDG_CACHE_HOME%/yarn']
+
+[[rule]]
+id = "dev.pip-cache"
+name = "pip cache"
+group = "Developer tools"
+tier = "yellow"
+description = "Python packages pip downloaded or built before."
+lose = "pip downloads packages again the next time you install them."
+paths = ['%XDG_CACHE_HOME%/pip']
+
+[[rule]]
+id = "dev.gradle-cache"
+name = "Gradle caches"
+group = "Developer tools"
+tier = "yellow"
+description = "Libraries and build outputs Gradle downloaded or made before."
+lose = "The next Gradle build downloads and builds them again, which is slower."
+paths = ['%HOME%/.gradle/caches']
+close_apps = ["java"]
+
+[[rule]]
+id = "dev.maven-repository"
+name = "Maven local repository"
+group = "Developer tools"
+tier = "yellow"
+description = "Libraries Maven downloaded before."
+lose = "The next Maven build downloads them again."
+paths = ['%HOME%/.m2/repository']
+close_apps = ["java"]
+
+[[rule]]
+id = "dev.cargo-registry-cache"
+name = "Cargo download cache"
+group = "Developer tools"
+tier = "yellow"
+description = "Rust crates Cargo downloaded before."
+lose = "Cargo downloads crates again the next time you build a project."
+paths = ['%HOME%/.cargo/registry/cache']
+
+[[rule]]
+id = "dev.go-build-cache"
+name = "Go build cache"
+group = "Developer tools"
+tier = "yellow"
+description = "Compiled Go packages the Go tool saved to build faster."
+lose = "The next Go build compiles them again, which is slower."
+paths = ['%XDG_CACHE_HOME%/go-build']

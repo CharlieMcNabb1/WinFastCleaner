@@ -43,6 +43,9 @@ pub const ALLOWED_VARS: &[&str] = &[
     "USERPROFILE",
     "PROGRAMDATA",
     "SYSTEMROOT",
+    "HOME",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
 ];
 
 /// Where a rule came from.
@@ -128,7 +131,7 @@ fn default_true() -> bool {
 }
 
 /// The built-in rule files, compiled into the program.
-const BUILTIN_FILES: &[(&str, &str)] = &[
+const WINDOWS_FILES: &[(&str, &str)] = &[
     ("windows.toml", include_str!("../../../rules/windows.toml")),
     (
         "browsers.toml",
@@ -140,6 +143,12 @@ const BUILTIN_FILES: &[(&str, &str)] = &[
         include_str!("../../../rules/dev-tools.toml"),
     ),
 ];
+const LINUX_FILES: &[(&str, &str)] = &[("linux.toml", include_str!("../../../rules/linux.toml"))];
+const BUILTIN_FILES: &[(&str, &str)] = if cfg!(windows) {
+    WINDOWS_FILES
+} else {
+    LINUX_FILES
+};
 
 /// Largest user rule file accepted.
 const MAX_RULE_FILE_BYTES: u64 = 256 * 1024;
@@ -163,6 +172,14 @@ impl Vars {
             // refuses on purpose.
             if let Some(p) = value.filter(|p| p.is_absolute()) {
                 v.0.insert((*name).to_string(), crate::platform::long_path(&p));
+            }
+        }
+        // The XDG defaults, which are usually not set in the environment.
+        if !cfg!(windows)
+            && let Some(home) = v.get("HOME").map(Path::to_path_buf)
+        {
+            for (name, rel) in [("XDG_CACHE_HOME", ".cache"), ("XDG_CONFIG_HOME", ".config")] {
+                v.0.entry(name.into()).or_insert_with(|| home.join(rel));
             }
         }
         if !v.0.contains_key("TEMP") {
@@ -408,14 +425,13 @@ fn validate(r: RawRule, source: RuleSource, vars: &Vars, guard: &Guard) -> Resul
         return Err("`close_apps` lists too many programs".into());
     }
     for app in &r.close_apps {
-        let ok = app.len() <= 64
-            && app.to_ascii_lowercase().ends_with(".exe")
+        let ok = (1..=64).contains(&app.len())
             && app
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || " ._-".contains(c));
         if !ok {
             return Err(format!(
-                "`close_apps`: `{app}` must be a program file name such as `chrome.exe`"
+                "`close_apps`: `{app}` must be a program file name such as `chrome.exe` or `chrome`"
             ));
         }
     }
@@ -593,38 +609,62 @@ mod tests {
         assert!(Vars::system().get("TEMP").is_none_or(looks_like_temp_dir));
     }
 
+    fn linux_vars() -> Vars {
+        Vars::default()
+            .with("TEMP", "/tmp")
+            .with("HOME", "/home/test-user")
+            .with("XDG_CACHE_HOME", "/home/test-user/.cache")
+            .with("XDG_CONFIG_HOME", "/home/test-user/.config")
+    }
+
+    /// Each platform's built-in rules, parsed with that platform's guard
+    /// (Linux paths can only be checked on Linux).
+    fn built_in_sets() -> Vec<RuleSet> {
+        let parse = |files: &[(&str, &str)], vars: Vars, guard: Guard| {
+            let mut set = RuleSet::default();
+            for (name, text) in files {
+                let source = RuleSource::BuiltIn((*name).to_string());
+                parse_into(text, source, &vars, &guard, &mut set);
+            }
+            dedupe_ids(&mut set);
+            set
+        };
+        let mut sets = vec![parse(WINDOWS_FILES, win_vars(), win_guard())];
+        if cfg!(not(windows)) {
+            sets.push(parse(
+                LINUX_FILES,
+                linux_vars(),
+                Guard::unix(&[PathBuf::from("/home/test-user/.local/share/WinFastCleaner")]),
+            ));
+        }
+        sets
+    }
+
     /// The README lists every built-in rule; keep it in step.
     #[test]
     fn readme_lists_every_built_in_rule() {
         let readme = include_str!("../../../README.md");
-        let mut set = RuleSet::default();
-        for (name, text) in BUILTIN_FILES {
-            parse_into(
-                text,
-                RuleSource::BuiltIn((*name).to_string()),
-                &win_vars(),
-                &win_guard(),
-                &mut set,
-            );
-        }
-        for r in &set.rules {
-            assert!(
-                readme.contains(&format!("| {} |", r.name)),
-                "README.md's built-in rules table is missing `{}`",
-                r.name
-            );
+        for set in built_in_sets() {
+            for r in &set.rules {
+                assert!(
+                    readme.contains(&format!("| {} |", r.name)),
+                    "README.md's built-in rules table is missing `{}`",
+                    r.name
+                );
+            }
         }
     }
 
     #[test]
     fn built_in_rules_all_load_cleanly() {
-        let set = load(None, &win_vars(), &win_guard());
-        assert!(set.errors.is_empty(), "{:#?}", set.errors);
-        assert!(set.rules.len() >= 20, "only {} rules", set.rules.len());
-        assert!(set.rules.iter().all(|r| r.tier != Tier::Red));
-        // Every rule explains itself.
-        for r in &set.rules {
-            assert!(!r.description.is_empty() && !r.lose.is_empty(), "{}", r.id);
+        for set in built_in_sets() {
+            assert!(set.errors.is_empty(), "{:#?}", set.errors);
+            assert!(set.rules.len() >= 15, "only {} rules", set.rules.len());
+            assert!(set.rules.iter().all(|r| r.tier != Tier::Red));
+            // Every rule explains itself.
+            for r in &set.rules {
+                assert!(!r.description.is_empty() && !r.lose.is_empty(), "{}", r.id);
+            }
         }
     }
 
@@ -712,7 +752,7 @@ mod tests {
                 "description",
             ),
             (format!("{OK}\ninclude = ['../x']"), "include"),
-            (format!("{OK}\nclose_apps = ['chrome']"), "close_apps"),
+            (format!("{OK}\nclose_apps = ['chrome/../x']"), "close_apps"),
             (format!("{OK}\nmin_age_days = 99999"), "min_age_days"),
             ("not toml at all [".to_string(), "not a valid rule file"),
             ("".to_string(), "no [[rule]]"),
