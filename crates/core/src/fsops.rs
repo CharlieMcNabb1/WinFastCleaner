@@ -193,6 +193,10 @@ pub fn describe_error(e: &io::Error) -> String {
             _ => {}
         }
     }
+    #[cfg(unix)]
+    if e.raw_os_error() == Some(libc::EXDEV) {
+        return "On a different drive than the recovery bin".into();
+    }
     match e.kind() {
         io::ErrorKind::NotFound => "Already gone".into(),
         io::ErrorKind::PermissionDenied => "Access denied".into(),
@@ -408,24 +412,75 @@ mod imp {
 
 #[cfg(unix)]
 mod imp {
+    //! Linux: the item's folder is opened once, and every check and action
+    //! goes through that folder handle (`openat`, `unlinkat`, `renameat2`),
+    //! so a folder on the way that is swapped for a link can't redirect a
+    //! delete or move somewhere else.
     use super::*;
-    use std::os::unix::fs::MetadataExt;
+    use std::ffi::{CStr, CString, OsStr};
+    use std::fs::File;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    use std::os::unix::io::{AsRawFd, FromRawFd};
 
-    /// Unix stand-in used by development machines and tests. It checks
-    /// with `lstat` right before acting; it is not race-free like the
-    /// Windows version, which is the one that ships.
+    const RENAME_NOREPLACE: libc::c_uint = 1;
+
     #[derive(Debug)]
     pub struct Handle {
-        path: PathBuf,
+        dir: File,
+        name: CString,
         dev: u64,
         ino: u64,
     }
 
+    /// Opens the folder of `path` and returns it with the name inside it.
+    fn split(path: &Path) -> io::Result<(File, CString)> {
+        let name = path
+            .file_name()
+            .ok_or_else(|| io::Error::other("path has no file name"))?;
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let dir = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_PATH | libc::O_DIRECTORY)
+            .open(parent)?;
+        Ok((dir, CString::new(name.as_bytes())?))
+    }
+
+    /// Opens `name` inside `dir` without following a link.
+    fn open_at(dir: &File, name: &CStr, flags: libc::c_int) -> io::Result<File> {
+        // SAFETY: `dir` is an open folder and `name` is NUL-terminated.
+        let fd = unsafe {
+            libc::openat(
+                dir.as_raw_fd(),
+                name.as_ptr(),
+                flags | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if fd < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: `fd` was just opened and nothing else owns it.
+        Ok(unsafe { File::from_raw_fd(fd) })
+    }
+
+    fn cvt(result: libc::c_int) -> io::Result<()> {
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+
     impl Handle {
         pub fn open(path: &Path) -> io::Result<Handle> {
-            let md = std::fs::symlink_metadata(path)?;
+            let (dir, name) = split(path)?;
+            let md = open_at(&dir, &name, libc::O_PATH)?.metadata()?;
             Ok(Handle {
-                path: path.to_path_buf(),
+                dir,
+                name,
                 dev: md.dev(),
                 ino: md.ino(),
             })
@@ -435,12 +490,18 @@ mod imp {
             Handle::open(path)
         }
 
+        /// The item's facts, if the name still refers to the opened item.
+        fn current(&self) -> io::Result<std::fs::Metadata> {
+            let md = open_at(&self.dir, &self.name, libc::O_PATH)?.metadata()?;
+            if md.dev() != self.dev || md.ino() != self.ino {
+                return Err(io::Error::other("item changed while being processed"));
+            }
+            Ok(md)
+        }
+
         pub fn wipe(&self) -> io::Result<()> {
-            use std::os::unix::fs::OpenOptionsExt;
-            let f = std::fs::OpenOptions::new()
-                .write(true)
-                .custom_flags(libc::O_NOFOLLOW)
-                .open(&self.path)?;
+            // Non-blocking, so an item swapped for a pipe can't hang the clean.
+            let f = open_at(&self.dir, &self.name, libc::O_WRONLY | libc::O_NONBLOCK)?;
             let md = f.metadata()?;
             if md.dev() != self.dev || md.ino() != self.ino || !md.is_file() {
                 return Err(io::Error::other("item changed while being processed"));
@@ -449,14 +510,6 @@ mod imp {
                 return Err(io::Error::other(super::HARD_LINKED));
             }
             super::overwrite(&f, md.len())
-        }
-
-        fn current(&self) -> io::Result<std::fs::Metadata> {
-            let md = std::fs::symlink_metadata(&self.path)?;
-            if md.dev() != self.dev || md.ino() != self.ino {
-                return Err(io::Error::other("item changed while being processed"));
-            }
-            Ok(md)
         }
 
         pub fn info(&self) -> io::Result<ItemInfo> {
@@ -473,34 +526,41 @@ mod imp {
         }
 
         pub fn final_path(&self) -> io::Result<PathBuf> {
-            let name = self
-                .path
-                .file_name()
-                .ok_or_else(|| io::Error::other("path has no file name"))?;
-            let parent = self.path.parent().unwrap_or(Path::new("/"));
-            Ok(std::fs::canonicalize(parent)?.join(name))
+            let dir = std::fs::read_link(format!("/proc/self/fd/{}", self.dir.as_raw_fd()))?;
+            Ok(dir.join(OsStr::from_bytes(self.name.as_bytes())))
         }
 
+        // shortcut: Linux can't unlink or rename by handle, so the name is
+        // re-checked and then acted on inside the pinned folder; another
+        // process could still swap entries within that one folder in
+        // between. Upgrade if Linux gains unlink-by-handle.
         pub fn delete(self) -> io::Result<()> {
-            let md = self.current()?;
-            if md.is_dir() {
-                std::fs::remove_dir(&self.path)
+            let flags = if self.current()?.is_dir() {
+                libc::AT_REMOVEDIR
             } else {
-                std::fs::remove_file(&self.path)
-            }
+                0
+            };
+            // SAFETY: `dir` is an open folder and `name` is NUL-terminated.
+            cvt(unsafe { libc::unlinkat(self.dir.as_raw_fd(), self.name.as_ptr(), flags) })
         }
 
         pub fn rename_no_replace(&self, target: &Path) -> io::Result<()> {
-            let md = self.current()?;
-            if md.is_dir() {
-                if target.symlink_metadata().is_ok() {
-                    return Err(io::ErrorKind::AlreadyExists.into());
-                }
-                return std::fs::rename(&self.path, target);
-            }
-            // A hard link fails if the target exists, so nothing is replaced.
-            std::fs::hard_link(&self.path, target)?;
-            std::fs::remove_file(&self.path)
+            self.current()?;
+            let (to_dir, to_name) = split(target)?;
+            // SAFETY: both folders are open and both names are NUL-terminated.
+            // File systems without RENAME_NOREPLACE fail here, so nothing is
+            // ever replaced.
+            let r = unsafe {
+                libc::syscall(
+                    libc::SYS_renameat2,
+                    self.dir.as_raw_fd(),
+                    self.name.as_ptr(),
+                    to_dir.as_raw_fd(),
+                    to_name.as_ptr(),
+                    RENAME_NOREPLACE,
+                )
+            };
+            cvt(if r == 0 { 0 } else { -1 })
         }
     }
 }
@@ -595,6 +655,25 @@ mod tests {
             std::os::unix::fs::symlink(&a, &sym).unwrap();
             assert!(open_read(&sym).is_err(), "symlinks are not followed");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_swapped_for_a_link_does_not_redirect_a_delete() {
+        let tmp = tempfile::tempdir().unwrap();
+        let junk = tmp.path().join("junk");
+        let precious = tmp.path().join("precious");
+        std::fs::create_dir_all(&junk).unwrap();
+        std::fs::create_dir_all(&precious).unwrap();
+        std::fs::write(junk.join("x.tmp"), b"junk").unwrap();
+        std::fs::write(precious.join("x.tmp"), b"keep me").unwrap();
+        let h = open(&junk.join("x.tmp")).unwrap();
+        // Swap the junk folder for a link to the precious one.
+        std::fs::rename(&junk, tmp.path().join("junk-moved")).unwrap();
+        std::os::unix::fs::symlink(&precious, &junk).unwrap();
+        h.delete().unwrap();
+        assert_eq!(std::fs::read(precious.join("x.tmp")).unwrap(), b"keep me");
+        assert!(!tmp.path().join("junk-moved/x.tmp").exists());
     }
 
     #[cfg(unix)]
