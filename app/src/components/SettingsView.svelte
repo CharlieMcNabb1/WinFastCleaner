@@ -185,7 +185,9 @@
       </label>
     </section>
 
-    <AutomationSettings {info} {active} {onNavigate} />
+    {#if isWindows}
+      <AutomationSettings {info} {active} {onNavigate} />
+    {/if}
 
     <section class="card" aria-labelledby="set-secure">
       <h2 id="set-secure">Secure delete</h2>
@@ -306,7 +308,7 @@
           {/each}
         </ul>
       {/if}
-      <button class="btn" onclick={openRules} disabled={!isWindows}><Icon name="folderOpen" /> Open rules folder</button>
+      <button class="btn" onclick={openRules}><Icon name="folderOpen" /> Open rules folder</button>
     </section>
 
     <section class="card" aria-labelledby="set-data">

@@ -311,7 +311,8 @@ and finishes it safely, so it isn't cancelled midway.
   to scan and exclusions (a list that can only protect files).
 - **No network access** from the app. `deny.toml` bans HTTP and TLS client
   crates. The only outside programs it starts are `winget` (Updates tab) and
-  `Dism.exe` (Deep clean), with fixed arguments.
+  `Dism.exe` (Deep clean), with fixed arguments, and on Linux `xdg-open`
+  (from `/usr/bin`, never through `PATH`) to show a folder.
 - **Rule files are data only.** Loading a rule can never execute code or run
   a command. Unknown fields are rejected, every value is validated, and a
   rule aimed at a protected location is refused (see the

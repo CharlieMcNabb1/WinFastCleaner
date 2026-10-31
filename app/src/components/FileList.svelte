@@ -11,7 +11,6 @@
     nodeId,
     folderSize,
     driveTotal,
-    canReveal,
     refreshKey,
     onOpen,
     onNotice,
@@ -23,7 +22,6 @@
     nodeId: number;
     folderSize: number;
     driveTotal: number | null;
-    canReveal: boolean;
     /** Changes when protected/excluded marks may have changed. */
     refreshKey: number;
     onOpen: (id: number) => void;
@@ -223,9 +221,7 @@
     {#if target.isDir}
       <button role="menuitem" onclick={() => onOpen(target.id)}><Icon name="folderOpen" /> Open</button>
     {/if}
-    <button role="menuitem" disabled={!canReveal} onclick={() => reveal(target)} title={canReveal ? "" : "Only available on Windows"}>
-      <Icon name="external" /> Show in File Explorer
-    </button>
+    <button role="menuitem" onclick={() => reveal(target)}><Icon name="external" /> Show in folder</button>
     <button role="menuitem" onclick={() => copyPath(target)}><Icon name="copy" /> Copy path</button>
     <hr />
     <button

@@ -41,6 +41,9 @@
   ];
 
   let info = $state<AppInfo | null>(null);
+  // Privacy, Startup, and Updates work with Windows features only.
+  const WINDOWS_ONLY = new Set<Tab>(["privacy", "startup", "updates"]);
+  let tabs = $derived(info && info.platform !== "windows" ? TABS.filter((t) => !WINDOWS_ONLY.has(t.id)) : TABS);
   let tab = $state<Tab>("home");
   // Tabs stay alive once opened, so long operations keep running while the
   // user browses elsewhere. The Disk tab is always alive: it scans the
@@ -79,7 +82,7 @@
     try {
       applyTheme((await api.getSettings()).settings.theme);
     } catch {
-      // Keep following Windows.
+      // Keep following the system theme.
     }
     try {
       info = await api.appInfo();
@@ -96,7 +99,7 @@
       <span>WinFastCleaner</span>
     </div>
     <ul>
-      {#each TABS as t (t.id)}
+      {#each tabs as t (t.id)}
         <li>
           <button class="tab" class:active={tab === t.id} aria-current={tab === t.id ? "page" : undefined} onclick={() => go(t.id)}>
             <Icon name={t.icon} /> {t.label}

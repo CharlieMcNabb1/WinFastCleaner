@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use cleaner_core::health::{self, Check, Status};
+use cleaner_core::health::{self, Check, CheckId, Status};
 
 use crate::cleaning::context;
 
@@ -18,7 +18,9 @@ pub struct HealthView {
 #[tauri::command(async)]
 pub fn health_check() -> CmdResult<HealthView> {
     let (data, settings, _ctx) = context()?;
-    let checks = health::evaluate(&health::gather(&data, &settings), &settings.health);
+    let mut checks = health::evaluate(&health::gather(&data, &settings), &settings.health);
+    // The startup manager and winget updates only exist on Windows.
+    checks.retain(|c| cfg!(windows) || !matches!(c.id, CheckId::Startup | CheckId::Updates));
     Ok(HealthView {
         overall: health::overall(&checks),
         checks,

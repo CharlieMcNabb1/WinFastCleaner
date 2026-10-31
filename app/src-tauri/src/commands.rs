@@ -476,9 +476,14 @@ fn reveal(path: &Path) -> CmdResult<()> {
         .map_err(|e| format!("Could not open File Explorer: {e}"))
 }
 
+/// Opens the item's folder (Linux file managers have no common way to
+/// select one item).
 #[cfg(not(windows))]
-fn reveal(_path: &Path) -> CmdResult<()> {
-    Err("Showing items in File Explorer is only available on Windows.".into())
+fn reveal(path: &Path) -> CmdResult<()> {
+    match path.parent() {
+        Some(parent) if !path.is_dir() => open_folder(parent),
+        _ => open_folder(path),
+    }
 }
 
 /// Opens a folder in File Explorer.
@@ -499,9 +504,23 @@ pub(crate) fn open_folder(path: &Path) -> CmdResult<()> {
         .map_err(|e| format!("Could not open File Explorer: {e}"))
 }
 
+/// Opens a folder in the user's file manager through `xdg-open`, from its
+/// fixed location (never through `PATH`), with the path as one argument.
 #[cfg(not(windows))]
-pub(crate) fn open_folder(_path: &Path) -> CmdResult<()> {
-    Err("Opening folders is only available on Windows.".into())
+pub(crate) fn open_folder(path: &Path) -> CmdResult<()> {
+    let xdg_open = ["/usr/bin/xdg-open", "/run/current-system/sw/bin/xdg-open"]
+        .into_iter()
+        .map(Path::new)
+        .find(|p| p.is_file())
+        .ok_or("Could not find xdg-open to open the folder.")?;
+    std::process::Command::new(xdg_open)
+        .arg(path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Could not open the folder: {e}"))
 }
 
 /// Restarts the app with administrator rights (one UAC prompt), which

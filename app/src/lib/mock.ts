@@ -486,7 +486,13 @@ export function createMockBackend(): Backend {
   };
 
   return {
-    appInfo: async () => ({ name: "WinFastCleaner", version: "0.1.0 (mock)", platform: "windows", elevated: false }),
+    appInfo: async () => ({
+      name: "WinFastCleaner",
+      version: "0.1.0 (mock)",
+      // `?platform=linux` previews the Linux layout.
+      platform: new URLSearchParams(location.search).get("platform") ?? "windows",
+      elevated: false,
+    }),
     listDrives: async () => drives,
     startScan: async (path, allowMft, onEvent) => {
       if (timer) throw new Error("A scan is already running.");
