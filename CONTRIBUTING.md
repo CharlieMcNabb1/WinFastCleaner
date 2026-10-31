@@ -72,11 +72,21 @@ scripts/test-installer.ps1 (Get-ChildItem target/release/bundle/nsis/*-setup.exe
 `test-installer.ps1` installs for all users (run it from an elevated
 PowerShell, ideally in a throwaway VM), checks the programs, and uninstalls.
 
+### The Linux packages
+
+```sh
+(cd app && npm ci --ignore-scripts)
+scripts/build-linux.sh             # builds wfc, the AppImage, and the .deb
+sudo apt install ./target/release/bundle/deb/*.deb   # ideally in a throwaway VM
+```
+
+CI builds both on Ubuntu 22.04 and installs and removes the `.deb`.
+
 ### Releases
 
 Bump the version in `Cargo.toml` (workspace), `app/package.json`, and
 `app/src-tauri/tauri.conf.json`, merge, then push a tag such as `v0.2.0`.
-`release.yml` builds and tests the installer and creates a **draft** GitHub
+`release.yml` builds and tests the installer and the Linux packages and creates a **draft** GitHub
 release with SHA-256 checksums for a maintainer to review and publish.
 
 ### NTFS (MFT reader) tests on Linux

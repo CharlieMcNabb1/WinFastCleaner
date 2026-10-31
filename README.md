@@ -176,6 +176,18 @@ scheduled cleaning task, and the tray monitor's sign-in entry. It keeps
 which may still hold your files**): restore anything you want first, then
 delete that folder yourself.
 
+**Linux (x86-64):** download `WinFastCleaner_<version>_amd64.AppImage` (any
+distro: make it executable and run it) or `WinFastCleaner_<version>_amd64.deb`
+(Debian, Ubuntu: `sudo apt install ./WinFastCleaner_<version>_amd64.deb`, which
+also installs `wfc`), and check it against `SHA256SUMS-linux.txt`. On Linux the
+app has the Disk view, the cleaner with [Linux rules](#built-in-rules), the
+file finders, What grew, and the recovery bin
+(`~/.local/share/WinFastCleaner`). Privacy, Startup, Updates, Deep clean,
+scheduled cleaning, and the tray are Windows-only and hidden there. Files on
+other drives than your home folder can be deleted directly by green rules,
+but can't go to the recovery bin yet, so yellow and red items there are
+skipped.
+
 Or build it from source as described [below](#building-from-source).
 
 ### Desktop app
@@ -396,6 +408,11 @@ npm run dev:mock
 # The installer (from the repository root, after npm ci in app/)
 scripts/build-installer.ps1
 ```
+
+On Linux you also need the WebKitGTK development files (Debian/Ubuntu:
+`sudo apt install libwebkit2gtk-4.1-dev librsvg2-dev patchelf file`), and
+`scripts/build-linux.sh` builds the AppImage and `.deb` instead of the
+installer.
 
 Run the tests with `cargo test --workspace` and `npm test --prefix app`. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for details, including the NTFS image tests
