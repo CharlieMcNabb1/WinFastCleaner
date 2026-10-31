@@ -102,6 +102,33 @@ browser profile):
 | Go build cache | Optional | `%LOCALAPPDATA%\go-build` |  |
 | ~/.cache folder | Optional | `%USERPROFILE%\.cache` |  |
 
+On Linux the cleaner uses [`rules/linux.toml`](rules/linux.toml) instead.
+Another account's files (for example in `/tmp`) are never listed or cleaned.
+
+| Item | Tier | Locations | Notes |
+|---|---|---|---|
+| Temporary files | Safe | `%TEMP%` (`/tmp`) | older than 7 days |
+| Thumbnail cache | Safe | `~/.cache/thumbnails` |  |
+| Google Chrome cache | Safe | `~/.cache/google-chrome/*/Cache`<br>`~/.cache/google-chrome/*/Code Cache`<br>`~/.config/google-chrome/*/GPUCache`<br>`~/.config/google-chrome/ShaderCache`<br>`~/.config/google-chrome/GrShaderCache` | skipped while chrome runs |
+| Chromium cache | Safe | `~/.cache/chromium/*/Cache`<br>`~/.cache/chromium/*/Code Cache`<br>`~/.config/chromium/*/GPUCache`<br>`~/.config/chromium/ShaderCache`<br>`~/.config/chromium/GrShaderCache` | skipped while chromium runs |
+| Microsoft Edge cache | Safe | `~/.cache/microsoft-edge/*/Cache`<br>`~/.cache/microsoft-edge/*/Code Cache`<br>`~/.config/microsoft-edge/*/GPUCache`<br>`~/.config/microsoft-edge/ShaderCache`<br>`~/.config/microsoft-edge/GrShaderCache` | skipped while msedge runs |
+| Brave cache | Safe | `~/.cache/BraveSoftware/Brave-Browser/*/Cache`<br>`~/.cache/BraveSoftware/Brave-Browser/*/Code Cache`<br>`~/.config/BraveSoftware/Brave-Browser/*/GPUCache`<br>`~/.config/BraveSoftware/Brave-Browser/ShaderCache` | skipped while brave runs |
+| Firefox cache | Safe | `~/.cache/mozilla/firefox/*/cache2`<br>`~/.cache/mozilla/firefox/*/startupCache` | skipped while firefox runs |
+| Discord cache | Safe | `~/.config/discord/Cache`<br>`~/.config/discord/Code Cache`<br>`~/.config/discord/GPUCache` | skipped while discord runs |
+| Visual Studio Code cache | Safe | `~/.config/Code/Cache`<br>`~/.config/Code/CachedData`<br>`~/.config/Code/Code Cache`<br>`~/.config/Code/GPUCache`<br>`~/.config/Code/CachedExtensionVSIXs` | skipped while code runs |
+| Steam web cache | Safe | `~/.local/share/Steam/config/htmlcache` | skipped while steam or steamwebhelper runs |
+| Spotify cache | Optional | `~/.cache/spotify/Data`<br>`~/.cache/spotify/Storage` | skipped while spotify runs |
+| npm cache | Optional | `~/.npm/_cacache` |  |
+| Yarn cache | Optional | `~/.cache/yarn` |  |
+| pip cache | Optional | `~/.cache/pip` |  |
+| Gradle caches | Optional | `~/.gradle/caches` | skipped while java runs |
+| Maven local repository | Optional | `~/.m2/repository` | skipped while java runs |
+| Cargo download cache | Optional | `~/.cargo/registry/cache` |  |
+| Go build cache | Optional | `~/.cache/go-build` |  |
+
+`~/.cache` and `~/.config` are `%XDG_CACHE_HOME%` and `%XDG_CONFIG_HOME%`
+when those are set.
+
 ## The three safety tiers
 
 | Tier | Meaning | Selected by default | Where deleted files go |

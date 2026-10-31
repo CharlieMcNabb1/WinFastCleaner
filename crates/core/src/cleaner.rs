@@ -284,9 +284,13 @@ fn is_system_or_cloud(md: &std::fs::Metadata) -> bool {
     md.file_attributes() & (SYSTEM | OFFLINE | RECALL_ON_OPEN | RECALL_ON_DATA_ACCESS) != 0
 }
 
+/// On Linux, another account's file (in shared folders such as `/tmp`) is
+/// never ours to clean.
 #[cfg(not(windows))]
-fn is_system_or_cloud(_md: &std::fs::Metadata) -> bool {
-    false
+fn is_system_or_cloud(md: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    md.uid() != unsafe { libc::geteuid() }
 }
 
 /// One file in a plan.

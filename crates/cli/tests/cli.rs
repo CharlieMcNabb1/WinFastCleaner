@@ -176,7 +176,12 @@ fn rules_list_includes_the_built_in_rules() {
         .iter()
         .map(|r| r["id"].as_str().unwrap())
         .collect();
-    assert!(ids.contains(&"windows.user-temp"), "{ids:?}");
+    let temp = if cfg!(windows) {
+        "windows.user-temp"
+    } else {
+        "linux.temp"
+    };
+    assert!(ids.contains(&temp), "{ids:?}");
     assert!(ids.contains(&"chrome.cache"));
     assert_eq!(v["errors"].as_array().unwrap().len(), 0, "{v}");
     // No built-in rule is ever red.
