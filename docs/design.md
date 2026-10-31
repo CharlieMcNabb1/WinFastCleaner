@@ -387,17 +387,14 @@ the exact files are one expand away.
 
 ## Not done yet
 
-The tokens in `app.css` are still the old "Ledger" values. Home has the old
-layout restyle, but none of the screens use this palette yet. Still to do:
+The Graphite colors, `--border-strong`, `--radius-pill`, neutral destructive
+buttons, native controls in `--accent`, and the grey treemap are in place.
+Still to do:
 
-- Put the Graphite values into all three theme blocks of `app.css`, and add
-  `--border-strong`, `--radius-pill`, and the motion tokens.
-- Apply the scales, corners, motion, size bars, tier row layout, and
-  disclosure patterns to the screens.
-- Treemap (`Treemap.svelte`): replace the hardcoded stroke and fill colors
-  with theme greys, and outline the selected block in `--focus`.
-- `.btn.danger` and `.btn.danger.primary` use `--tier-red`, which breaks the
-  tier rule, and the white text on it is below 4.5:1 in dark mode. Make
-  destructive buttons neutral.
-- Replace hardcoded colors and radii with tokens (for example the `Modal`
-  backdrop and shadow, and the 6px button radius).
+- Add the motion tokens.
+- Apply the scales, corners, motion, tier row layout, and disclosure patterns
+  to the screens (the per-tab layouts above).
+- Treemap: outline the selected block in `--focus` once the treemap has a
+  selection.
+- Replace the remaining hardcoded radii with tokens (for example the 6px
+  button radius).

@@ -52,13 +52,13 @@
     border-radius: 12px;
     background: var(--surface);
     color: var(--text);
-    box-shadow: 0 16px 48px rgb(0 0 0 / 28%);
+    box-shadow: 0 16px 48px rgb(15 16 18 / 24%);
   }
   dialog.wide {
     width: min(760px, calc(100vw - 32px));
   }
   dialog::backdrop {
-    background: rgb(10 12 20 / 45%);
+    background: rgb(15 16 18 / 45%);
   }
   h2 {
     margin: 0 0 10px;

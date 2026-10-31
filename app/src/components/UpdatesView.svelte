@@ -313,7 +313,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border-color: var(--tier-green);
+    border-color: var(--border);
   }
   table {
     width: 100%;
@@ -342,10 +342,10 @@
     font-weight: 600;
   }
   .ok {
-    color: var(--tier-green);
+    color: var(--text);
   }
   .fail {
-    color: var(--tier-red);
+    color: var(--text);
   }
   .confirm {
     margin: 4px 0;
