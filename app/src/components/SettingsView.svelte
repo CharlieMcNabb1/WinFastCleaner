@@ -342,7 +342,7 @@
     display: inline-flex;
     gap: 4px;
     align-items: center;
-    color: var(--tier-green);
+    color: var(--text);
   }
   .check {
     display: flex;
@@ -396,7 +396,7 @@
     padding-left: 4px;
     list-style: none;
     font-size: 12px;
-    color: var(--tier-yellow);
+    color: var(--text);
   }
   .settings .card > .btn {
     align-self: flex-start;

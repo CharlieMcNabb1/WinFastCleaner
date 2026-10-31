@@ -68,7 +68,7 @@
 
 <style>
   .result {
-    border-color: var(--tier-green);
+    border-color: var(--border);
   }
   .head {
     display: flex;
@@ -81,7 +81,7 @@
     gap: 6px;
     margin: 0;
     font-size: 16px;
-    color: var(--tier-green);
+    color: var(--text);
   }
   .freed {
     margin: 4px 0;
@@ -96,7 +96,7 @@
     gap: 4px;
     align-items: center;
     cursor: pointer;
-    color: var(--tier-yellow);
+    color: var(--text);
   }
   .skipped {
     max-height: 180px;

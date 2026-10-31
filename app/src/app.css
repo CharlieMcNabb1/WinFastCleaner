@@ -1,27 +1,28 @@
-/* Design tokens ("Ledger", see docs/design.md). Light and dark themes follow
+/* Design tokens ("Graphite", see docs/design.md). Light and dark themes follow
    the Windows setting, unless the user picks one in Settings (the data-theme
    attribute on <html>). Text pairs must stay at least 4.5:1; tokens.test.ts
    checks them. */
 :root {
   color-scheme: light dark;
-  --bg: #f7f6f3;
+  --bg: #fafaf8;
   --surface: #ffffff;
-  --surface-2: #f1efea;
-  --surface-3: #e8e5de;
-  --border: #e2dfd8;
-  --text: #1c1b19;
-  --text-2: #5e5a52;
-  --accent: #0e7490;
-  --accent-2: #e4f1f4;
-  --accent-text: #ffffff;
-  --focus: #0e7490;
-  --bar: #0e7490;
-  --bar-track: #ece9e3;
-  --notice-bg: #eaf4f6;
-  --notice-border: #b9dae2;
-  --alert-bg: #fbf3e4;
-  --alert-border: #ebd3a6;
-  --shadow: 0 1px 2px rgb(28 27 25 / 6%), 0 2px 6px rgb(28 27 25 / 6%);
+  --surface-2: #f0f0ef;
+  --surface-3: #dadada;
+  --border: #dadada;
+  --border-strong: #7e8186;
+  --text: #0f1012;
+  --text-2: #43464b;
+  --accent: #0f1012;
+  --accent-2: #dadada;
+  --accent-text: #fafaf8;
+  --focus: #0f1012;
+  --bar: #43464b;
+  --bar-track: #dadada;
+  --notice-bg: #f0f0ef;
+  --notice-border: #dadada;
+  --alert-bg: #ffffff;
+  --alert-border: #43464b;
+  --shadow: 0 1px 2px rgb(15 16 18 / 6%), 0 2px 6px rgb(15 16 18 / 6%);
 
   /* Safety tier colors (Phase 2). Reserved for tiers only, and always
      shown together with a label or icon, never color alone. */
@@ -48,6 +49,7 @@
   --radius-sm: 6px;
   --radius: 8px;
   --radius-lg: 12px;
+  --radius-pill: 999px;
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
 }
@@ -56,23 +58,24 @@
    Settings), or when the user picked dark. Keep the two blocks the same. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #121110;
-    --surface: #1a1917;
-    --surface-2: #23221f;
-    --surface-3: #2b2a26;
-    --border: #2f2d29;
-    --text: #eceae5;
-    --text-2: #a39e94;
-    --accent: #4fb3cb;
-    --accent-2: #12313a;
-    --accent-text: #06191f;
-    --focus: #4fb3cb;
-    --bar: #4fb3cb;
-    --bar-track: #2f2d29;
-    --notice-bg: #142a30;
-    --notice-border: #24505b;
-    --alert-bg: #2a2213;
-    --alert-border: #5a4622;
+    --bg: #0f1012;
+    --surface: #191b1d;
+    --surface-2: #212326;
+    --surface-3: #292b2e;
+    --border: #43464b;
+    --border-strong: #6f7277;
+    --text: #fafaf8;
+    --text-2: #b0b3b8;
+    --accent: #fafaf8;
+    --accent-2: #43464b;
+    --accent-text: #0f1012;
+    --focus: #fafaf8;
+    --bar: #b0b3b8;
+    --bar-track: #43464b;
+    --notice-bg: #212326;
+    --notice-border: #43464b;
+    --alert-bg: #191b1d;
+    --alert-border: #b0b3b8;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%);
 
     --tier-green: #6bcb82;
@@ -86,23 +89,24 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #121110;
-  --surface: #1a1917;
-  --surface-2: #23221f;
-  --surface-3: #2b2a26;
-  --border: #2f2d29;
-  --text: #eceae5;
-  --text-2: #a39e94;
-  --accent: #4fb3cb;
-  --accent-2: #12313a;
-  --accent-text: #06191f;
-  --focus: #4fb3cb;
-  --bar: #4fb3cb;
-  --bar-track: #2f2d29;
-  --notice-bg: #142a30;
-  --notice-border: #24505b;
-  --alert-bg: #2a2213;
-  --alert-border: #5a4622;
+  --bg: #0f1012;
+  --surface: #191b1d;
+  --surface-2: #212326;
+  --surface-3: #292b2e;
+  --border: #43464b;
+  --border-strong: #6f7277;
+  --text: #fafaf8;
+  --text-2: #b0b3b8;
+  --accent: #fafaf8;
+  --accent-2: #43464b;
+  --accent-text: #0f1012;
+  --focus: #fafaf8;
+  --bar: #b0b3b8;
+  --bar-track: #43464b;
+  --notice-bg: #212326;
+  --notice-border: #43464b;
+  --alert-bg: #191b1d;
+  --alert-border: #b0b3b8;
   --shadow: 0 1px 2px rgb(0 0 0 / 40%);
 
   --tier-green: #6bcb82;
@@ -178,8 +182,7 @@ button:disabled {
 }
 
 .btn.primary:hover:not(:disabled) {
-  filter: brightness(1.08);
-  background: var(--accent);
+  background: color-mix(in srgb, var(--accent) 88%, var(--surface));
 }
 
 .btn.ghost {
@@ -282,16 +285,6 @@ button:disabled {
   background: var(--alert-bg);
 }
 
-.btn.danger {
-  color: var(--tier-red);
-}
-
-.btn.danger.primary {
-  background: var(--tier-red);
-  border-color: var(--tier-red);
-  color: #fff;
-}
-
 .link-btn {
   display: inline-flex;
   gap: 4px;
@@ -354,11 +347,19 @@ button:disabled {
 }
 
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+select {
   font: inherit;
   color: inherit;
   padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
   background: var(--surface);
+}
+
+/* Native checkboxes, radios, and switches in the accent, never system blue. */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"] {
+  accent-color: var(--accent);
 }

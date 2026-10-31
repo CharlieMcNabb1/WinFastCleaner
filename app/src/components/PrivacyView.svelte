@@ -188,7 +188,7 @@
     white-space: nowrap;
   }
   .result {
-    border-color: var(--tier-green);
+    border-color: var(--border);
   }
   .result .head {
     display: flex;
@@ -200,7 +200,7 @@
     gap: 6px;
     align-items: center;
     margin: 0;
-    color: var(--tier-green);
+    color: var(--text);
   }
   .result ul,
   .confirm {
@@ -208,7 +208,7 @@
     padding-left: 20px;
   }
   .warn {
-    color: var(--tier-yellow);
+    color: var(--text);
   }
   .bar {
     position: sticky;

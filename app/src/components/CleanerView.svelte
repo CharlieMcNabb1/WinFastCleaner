@@ -514,7 +514,7 @@
     gap: 6px;
     align-items: center;
     cursor: pointer;
-    color: var(--tier-yellow);
+    color: var(--text);
   }
   .rule-errors ul {
     margin: 8px 0 0;
@@ -568,7 +568,7 @@
     gap: 6px;
     align-items: center;
     margin-top: 8px !important;
-    color: var(--tier-green);
+    color: var(--text);
   }
   .small {
     font-size: 12px;

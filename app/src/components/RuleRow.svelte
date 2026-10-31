@@ -214,7 +214,7 @@
     text-align: right;
   }
   .status.warn {
-    color: var(--tier-yellow);
+    color: var(--text);
   }
   .size {
     display: flex;
@@ -242,7 +242,7 @@
     font-size: 12px;
   }
   .alert-text {
-    color: var(--tier-red);
+    color: var(--text);
   }
   .files {
     list-style: none;

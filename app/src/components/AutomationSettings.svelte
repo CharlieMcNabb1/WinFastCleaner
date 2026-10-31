@@ -262,7 +262,7 @@
     display: inline-flex;
     gap: 6px;
     align-items: center;
-    color: var(--tier-yellow);
+    color: var(--text);
   }
   .check {
     display: flex;

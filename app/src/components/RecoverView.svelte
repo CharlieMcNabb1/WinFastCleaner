@@ -155,7 +155,7 @@
     <div class="head-actions">
       <button class="btn" onclick={refresh} disabled={working}><Icon name="refresh" /> Refresh</button>
       <button
-        class="btn danger"
+        class="btn"
         onclick={() => {
           secure = false;
           confirmEmpty = true;
@@ -218,7 +218,7 @@
             </div>
             <button class="btn" onclick={() => restore(b.id, null)} disabled={working}><Icon name="restore" /> Restore all</button>
             <button
-              class="btn danger"
+              class="btn"
               onclick={() => {
                 secure = false;
                 confirmDelete = { id: b.id, label: formatDateTime(b.createdAt), size: b.size, items: b.items };
@@ -294,7 +294,7 @@
     <button class="btn" onclick={() => (confirmDelete = null)}>Cancel</button>
     {#if confirmDelete}
       {@const d = confirmDelete}
-      <button class="btn danger primary" onclick={() => deleteBatch(d.id)}>
+      <button class="btn primary" onclick={() => deleteBatch(d.id)}>
         <Icon name="trash" /> Delete {sizeAndCount(d.size, d.items)}
       </button>
     {/if}
@@ -308,7 +308,7 @@
   {/if}
   {#snippet actions()}
     <button class="btn" onclick={() => (confirmEmpty = false)}>Cancel</button>
-    <button class="btn danger primary" onclick={emptyBin}><Icon name="trash" /> Delete {sizeAndCount(totalSize, totalItems)}</button>
+    <button class="btn primary" onclick={emptyBin}><Icon name="trash" /> Delete {sizeAndCount(totalSize, totalItems)}</button>
   {/snippet}
 </Modal>
 

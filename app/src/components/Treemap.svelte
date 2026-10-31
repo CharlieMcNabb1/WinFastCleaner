@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
 
   import type { Backend } from "../lib/backend.ts";
-  import { CATEGORY_LABELS, type Category, category, formatPercent, formatSize } from "../lib/format.ts";
+  import { CATEGORY_LABELS, category, formatPercent, formatSize } from "../lib/format.ts";
   import { isDark } from "../lib/theme.svelte.ts";
   import { type Rect, squarify } from "../lib/treemap.ts";
   import type { TreemapNode } from "../lib/types.ts";
@@ -19,21 +19,12 @@
     onOpen: (id: number) => void;
   } = $props();
 
-  // Hues deliberately avoid green, yellow, and red, which are reserved for
-  // the cleaner's safety tiers.
-  const COLORS: Record<Category, string> = {
-    folder: "#8ea2d8",
-    video: "#5c6bd6",
-    audio: "#9a5fd6",
-    image: "#c25ac9",
-    archive: "#2f8fcf",
-    program: "#3f6fe0",
-    diskImage: "#1f8aa3",
-    document: "#6b778c",
-    code: "#7c6fe0",
-    other: "#9aa5b8",
+  // Greys on the Graphite axis (docs/design.md): color is only for the
+  // safety tiers. An item's kind is in its tooltip.
+  const GREYS = {
+    light: { frame: "#f0f0ef", folder: "#dadada", file: "#c5c6c9", grouped: "#e9e9e8", line: "#ffffff", text: "#0f1012" },
+    dark: { frame: "#212326", folder: "#43464b", file: "#36383c", grouped: "#292b2e", line: "#0f1012", text: "#fafaf8" },
   };
-  const OTHER_COLOR = "#b9c0cc";
   const HEADER = 18;
 
   interface Hit extends Rect {
@@ -82,12 +73,6 @@
     draw(data, width, height, dark);
   });
 
-  function textColor(hex: string): string {
-    const n = parseInt(hex.slice(1), 16);
-    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-    return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "#111" : "#fff";
-  }
-
   function fit(ctx: CanvasRenderingContext2D, text: string, max: number): string | null {
     if (max < 24) return null;
     if (ctx.measureText(text).width <= max) return text;
@@ -102,13 +87,14 @@
   }
 
   function block(ctx: CanvasRenderingContext2D, r: Rect, fill: string, label: string, sub: string) {
+    const g = dark ? GREYS.dark : GREYS.light;
     ctx.fillStyle = fill;
     ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.strokeStyle = dark ? "#111319" : "#ffffff";
+    ctx.strokeStyle = g.line;
     ctx.lineWidth = 1;
     ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
     if (r.h < 16) return;
-    ctx.fillStyle = textColor(fill);
+    ctx.fillStyle = g.text;
     const t = fit(ctx, label, r.w - 8);
     if (t) ctx.fillText(t, r.x + 4, r.y + 13);
     if (r.h >= 32) {
@@ -141,12 +127,13 @@
     ctx.font = "12px 'Segoe UI', system-ui, sans-serif";
     hits = [];
     if (!d || d.size === 0 || w < 10 || h < 10) return;
+    const grey = isDark ? GREYS.dark : GREYS.light;
 
     for (const p of squarify(items(d), { x: 0, y: 0, w, h })) {
       const c = p.item;
       if (!c) {
         const label = `${d.otherCount.toLocaleString()} smaller items`;
-        block(ctx, p, OTHER_COLOR, label, formatSize(d.otherSize));
+        block(ctx, p, grey.grouped, label, formatSize(d.otherSize));
         hits.push({ ...p, id: null, openId: null, name: label, size: d.otherSize, label: "Grouped" });
         continue;
       }
@@ -154,11 +141,11 @@
       const sub = `${formatSize(c.size)} · ${formatPercent(c.size, d.size)}`;
       if (c.isDir && (c.children.length > 0 || c.otherSize > 0) && p.w > 48 && p.h > HEADER + 14) {
         // Folder frame with a header, contents laid out inside.
-        ctx.fillStyle = isDark ? "#2a3045" : "#dfe5f5";
+        ctx.fillStyle = grey.frame;
         ctx.fillRect(p.x, p.y, p.w, p.h);
-        ctx.strokeStyle = isDark ? "#111319" : "#ffffff";
+        ctx.strokeStyle = grey.line;
         ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1);
-        ctx.fillStyle = isDark ? "#e6e9f1" : "#1a1e29";
+        ctx.fillStyle = grey.text;
         const t = fit(ctx, `${c.name}  ${formatSize(c.size)}`, p.w - 8);
         if (t) ctx.fillText(t, p.x + 4, p.y + 13);
         hits.push({ ...p, id: c.id, openId: c.id, name: c.name, size: c.size, label: "Folder" });
@@ -166,12 +153,12 @@
         for (const q of squarify(items(c), inner)) {
           const g = q.item;
           if (!g) {
-            block(ctx, q, OTHER_COLOR, `${c.otherCount} more`, formatSize(c.otherSize));
+            block(ctx, q, grey.grouped, `${c.otherCount} more`, formatSize(c.otherSize));
             hits.push({ ...q, id: null, openId: c.id, name: `${c.otherCount} smaller items`, size: c.otherSize, label: "Grouped" });
             continue;
           }
           const gc = category(g.name, g.isDir);
-          block(ctx, q, COLORS[gc], g.name, formatSize(g.size));
+          block(ctx, q, g.isDir ? grey.folder : grey.file, g.name, formatSize(g.size));
           hits.push({
             ...q,
             id: g.id,
@@ -182,7 +169,7 @@
           });
         }
       } else {
-        block(ctx, p, COLORS[cat], c.name, sub);
+        block(ctx, p, c.isDir ? grey.folder : grey.file, c.name, sub);
         hits.push({ ...p, id: c.id, openId: c.isDir ? c.id : null, name: c.name, size: c.size, label: CATEGORY_LABELS[cat] });
       }
     }
@@ -211,18 +198,6 @@
     if (hit?.openId != null) onOpen(hit.openId);
   }
 
-  let legend = $derived.by(() => {
-    if (!data) return [] as Category[];
-    const seen = new Set<Category>();
-    const visit = (n: TreemapNode) => {
-      for (const c of n.children) {
-        seen.add(category(c.name, c.isDir));
-        c.children.forEach((g) => seen.add(category(g.name, g.isDir)));
-      }
-    };
-    visit(data);
-    return (Object.keys(COLORS) as Category[]).filter((c) => seen.has(c));
-  });
 </script>
 
 <div class="wrap">
@@ -252,13 +227,6 @@
     {/if}
     {#if error}<p class="muted err">{error}</p>{/if}
   </div>
-  {#if legend.length}
-    <ul class="legend" aria-label="Treemap colors">
-      {#each legend as c (c)}
-        <li><span class="swatch" style:background={c === "folder" ? COLORS.folder : COLORS[c]}></span>{CATEGORY_LABELS[c]}</li>
-      {/each}
-    </ul>
-  {/if}
 </div>
 
 <style>
@@ -295,26 +263,6 @@
     box-shadow: var(--shadow);
     font-size: 12px;
     word-break: break-all;
-  }
-  .legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 12px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    font-size: 12px;
-    color: var(--text-2);
-  }
-  .legend li {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-  }
-  .swatch {
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
   }
   .err {
     position: absolute;

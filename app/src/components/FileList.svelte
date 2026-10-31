@@ -384,7 +384,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--surface);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+    box-shadow: 0 8px 24px rgb(15 16 18 / 16%);
   }
   .menu button {
     display: flex;
