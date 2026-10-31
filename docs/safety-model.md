@@ -54,8 +54,22 @@ Always protected (nothing inside them is ever touched):
   is named `WinFastCleaner`, so a portable copy in Downloads doesn't lock
   Downloads).
 
+On Linux, always protected:
+
+- the system folders `/bin`, `/boot`, `/dev`, `/efi`, `/etc`, `/gnu`,
+  `/lib*`, `/lost+found`, `/nix`, `/opt`, `/proc`, `/root`, `/run`, `/sbin`,
+  `/snap`, `/srv`, `/sys`, `/usr`, `/var`, and the swap files `/swapfile` and
+  `/swap.img`;
+- inside every home folder (`$HOME` and each folder in `/home`): SSH and GPG
+  keys (`.ssh`, `.gnupg`), certificates (`.pki`), saved passwords
+  (`.password-store`, `.local/share/keyrings`, `.local/share/kwalletd`), and
+  Flatpak and Snap apps and their data (`.local/share/flatpak`, `.var/app`,
+  `snap`);
+- the app's own data folder (`~/.local/share/WinFastCleaner`).
+
 Never removed themselves (their contents may be cleaned): the root of every
-drive, the `Users` folder, `Users\Public`, and each user profile folder.
+drive, the `Users` folder, `Users\Public`, and each user profile folder (on
+Linux: `/`, `/home`, and each home folder).
 Empty-folder removal also never removes a folder that contains a protected
 location or an exclusion.
 
