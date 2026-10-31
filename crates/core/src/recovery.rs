@@ -218,7 +218,7 @@ impl RecoveryStore {
             },
             Err(e) => return Err(Error::io(path, e)),
         };
-        reconcile(&mut index);
+        reconcile(&mut index, crate::scan::now_unix());
         Ok(index)
     }
 
@@ -773,8 +773,11 @@ fn unique_name(path: &Path) -> Option<PathBuf> {
 }
 
 /// Fixes up pending items left by an interrupted cleanup.
-fn reconcile(index: &mut Index) {
+fn reconcile(index: &mut Index, now: i64) {
     for b in &mut index.batches {
+        // A recent batch may still be moving files in another thread or
+        // process; only `finish_batch` may drop its unmoved items.
+        let may_be_running = now - b.created_at < 86_400;
         b.items.retain_mut(|item| {
             if item.state == ItemState::Pending {
                 if std::fs::symlink_metadata(&item.stored).is_ok() {
@@ -782,7 +785,7 @@ fn reconcile(index: &mut Index) {
                     return true;
                 }
                 // Never moved (or already gone): nothing to recover.
-                return false;
+                return may_be_running;
             }
             true
         });
@@ -1175,6 +1178,30 @@ mod tests {
         assert_eq!(batch.items.len(), 1, "unmoved pending item dropped");
         assert_eq!(batch.items[0].state, ItemState::InBin);
         assert!(b.exists());
+    }
+
+    #[test]
+    fn reading_the_index_mid_clean_keeps_unmoved_items() {
+        let f = fixture(BinLimits::default());
+        let a = put(&f, "a.txt", b"a");
+        let items = [NewItem {
+            original: a.clone(),
+            size: 1,
+            tier: Tier::Yellow,
+            rule: None,
+        }];
+        let prepared = f
+            .store
+            .prepare_batch("Cleaner", &items, crate::scan::now_unix())
+            .unwrap();
+        // Another process (the tray's health check) reads the bin before
+        // the file has moved.
+        f.store.usage().unwrap();
+        move_in(&f, &a, prepared.stored[0].as_ref().unwrap()).unwrap();
+        f.store.finish_batch(&prepared.id, &[true]).unwrap();
+        let batch = f.store.batch(&prepared.id).unwrap();
+        assert_eq!(batch.items.len(), 1, "moved file is still listed");
+        assert_eq!(batch.items[0].state, ItemState::InBin);
     }
 
     #[test]

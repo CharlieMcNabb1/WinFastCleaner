@@ -161,6 +161,10 @@ mod read_imp {
     }
 }
 
+/// Overwriting a file with other names (hard links) would also erase the
+/// data under those names, which may be outside anything being cleaned.
+const HARD_LINKED: &str = "the file has other names (hard links), so it is not overwritten";
+
 /// Writes `len` zero bytes from the start of `file` and flushes them.
 fn overwrite(file: &std::fs::File, len: u64) -> io::Result<()> {
     use std::io::{Seek, SeekFrom, Write};
@@ -254,6 +258,9 @@ mod imp {
             let info = self.info()?;
             if info.is_dir || info.is_special || info.is_cloud {
                 return Err(io::Error::other("only regular files can be overwritten"));
+            }
+            if info.links > 1 {
+                return Err(io::Error::other(super::HARD_LINKED));
             }
             super::overwrite(&self.file, info.size)
         }
@@ -438,6 +445,9 @@ mod imp {
             if md.dev() != self.dev || md.ino() != self.ino || !md.is_file() {
                 return Err(io::Error::other("item changed while being processed"));
             }
+            if md.nlink() > 1 {
+                return Err(io::Error::other(super::HARD_LINKED));
+            }
             super::overwrite(&f, md.len())
         }
 
@@ -548,6 +558,17 @@ mod tests {
             open_for_wipe(tmp.path()).and_then(|h| h.wipe()).is_err(),
             "folders are refused"
         );
+    }
+
+    #[test]
+    fn wipe_refuses_hard_linked_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let doc = tmp.path().join("document.txt");
+        std::fs::write(&doc, b"keep me").unwrap();
+        let link = tmp.path().join("temp-link.tmp");
+        std::fs::hard_link(&doc, &link).unwrap();
+        assert!(open_for_wipe(&link).unwrap().wipe().is_err());
+        assert_eq!(std::fs::read(&doc).unwrap(), b"keep me");
     }
 
     #[test]
