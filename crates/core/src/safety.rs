@@ -112,6 +112,48 @@ const PROFILE_ROOT_FILE_PREFIXES: &[&str] = &["ntuser."];
 const USRCLASS_DIR: &str = r"appdata\local\microsoft\windows";
 const USRCLASS_PREFIX: &str = "usrclass.dat";
 
+/// Linux system locations: nothing inside them is ever touched.
+const UNIX_PROTECTED: &[(&str, &str)] = &[
+    ("/bin", "system folder"),
+    ("/boot", "system folder"),
+    ("/dev", "system folder"),
+    ("/efi", "system folder"),
+    ("/etc", "system folder"),
+    ("/gnu", "system folder"),
+    ("/lib", "system folder"),
+    ("/lib32", "system folder"),
+    ("/lib64", "system folder"),
+    ("/libx32", "system folder"),
+    ("/lost+found", "system folder"),
+    ("/nix", "system folder"),
+    ("/opt", "system folder"),
+    ("/proc", "system folder"),
+    ("/root", "the administrator's home folder"),
+    ("/run", "system folder"),
+    ("/sbin", "system folder"),
+    ("/snap", "system folder"),
+    ("/srv", "system folder"),
+    ("/sys", "system folder"),
+    ("/usr", "system folder"),
+    ("/var", "system folder"),
+    ("/swapfile", "system file"),
+    ("/swap.img", "system file"),
+];
+
+/// Subtrees of every Linux home folder that hold keys, passwords, or
+/// installed apps. (Paths are relative to the home folder.)
+const HOME_PROTECTED: &[(&str, &str)] = &[
+    (".ssh", "SSH keys"),
+    (".gnupg", "encryption keys"),
+    (".pki", "certificates"),
+    (".password-store", "saved passwords"),
+    (".local/share/keyrings", "saved passwords"),
+    (".local/share/kwalletd", "saved passwords"),
+    (".local/share/flatpak", "installed apps"),
+    (".var/app", "Flatpak app data"),
+    ("snap", "Snap app data"),
+];
+
 /// A path split into a lowercase drive (if any) and lowercase components.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NormPath {
@@ -325,9 +367,27 @@ impl Guard {
         g
     }
 
-    /// A guard for Unix development and test machines: system folders are
-    /// protected; temporary folders and home subfolders are not.
+    /// The guard for a Linux system: the signed-in user's home and every
+    /// folder in `/home`.
     pub fn unix(app_dirs: &[PathBuf]) -> Guard {
+        let mut homes: Vec<PathBuf> = std::fs::read_dir("/home")
+            .map(|rd| {
+                rd.flatten()
+                    .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+                    .map(|e| e.path())
+                    .collect()
+            })
+            .unwrap_or_default();
+        homes.extend(
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .filter(|h| h.is_absolute()),
+        );
+        Guard::unix_with(&homes, app_dirs)
+    }
+
+    /// A Linux guard for the given home folders (tests pass their own).
+    pub fn unix_with(homes: &[PathBuf], app_dirs: &[PathBuf]) -> Guard {
         let mut g = Guard {
             protected: Vec::new(),
             exact: Vec::new(),
@@ -336,27 +396,26 @@ impl Guard {
             profiles: Vec::new(),
             unix: true,
         };
-        for dir in [
-            "/bin", "/boot", "/dev", "/etc", "/lib", "/lib32", "/lib64", "/libx32", "/opt",
-            "/proc", "/run", "/sbin", "/snap", "/srv", "/sys", "/usr", "/var",
-        ] {
-            if let Some(n) = norm(Path::new(dir)) {
-                g.protected.push((n, "system folder"));
+        let mut protect = |p: &Path, why: &'static str| {
+            if let Some(n) = norm(p) {
+                g.protected.push((n, why));
             }
+        };
+        for (p, why) in UNIX_PROTECTED {
+            protect(Path::new(p), why);
         }
         for d in app_dirs {
-            if let Some(n) = norm(d) {
-                g.protected.push((n, "WinFastCleaner's own files"));
+            protect(d, "WinFastCleaner's own files");
+        }
+        for home in homes {
+            for (rel, why) in HOME_PROTECTED {
+                protect(&home.join(rel), why);
             }
         }
-        if let Some(home) = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .and_then(|h| norm(&h))
-        {
-            g.exact.push((home, "the home folder"));
-        }
-        if let Some(n) = norm(Path::new("/home")) {
-            g.exact.push((n, "the home folders"));
+        g.exact
+            .extend(norm(Path::new("/home")).map(|n| (n, "the home folders")));
+        for home in homes {
+            g.exact.extend(norm(home).map(|n| (n, "a home folder")));
         }
         g
     }
@@ -719,6 +778,50 @@ pub(crate) mod tests {
         ] {
             assert!(g.check_dir_removal(Path::new(p)).is_ok(), "{p}");
         }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn linux_system_files_keys_and_homes_are_protected() {
+        let g = Guard::unix_with(
+            &[PathBuf::from("/home/alice")],
+            &[PathBuf::from("/home/alice/.local/share/WinFastCleaner")],
+        );
+        for p in [
+            "/",
+            "/etc/fstab",
+            "/usr/bin/ls",
+            "/var/log/syslog",
+            "/root/notes.txt",
+            "/swapfile",
+            "/home",
+            "/home/alice",
+            "/home/alice/.ssh/id_ed25519",
+            "/home/alice/.gnupg/pubring.kbx",
+            "/home/alice/.local/share/keyrings/login.keyring",
+            "/home/alice/.var/app/org.gimp.GIMP/config/x",
+            "/home/alice/.local/share/WinFastCleaner/recovery/index.json",
+        ] {
+            assert!(g.check(Path::new(p)).is_err(), "{p} must be blocked");
+        }
+        for p in [
+            "/tmp/x.tmp",
+            "/home/alice/.cache/thumbnails/large/a.png",
+            "/home/alice/.cache/google-chrome/Default/Cache/f_000001",
+            "/home/alice/Downloads/big.iso",
+            "/mnt/data/old.zip",
+        ] {
+            assert!(g.check(Path::new(p)).is_ok(), "{p} must be allowed");
+        }
+        // Folders holding protected data are never removed when empty.
+        assert!(
+            g.check_dir_removal(Path::new("/home/alice/.local/share"))
+                .is_err()
+        );
+        assert!(
+            g.check_dir_removal(Path::new("/home/alice/.cache/old"))
+                .is_ok()
+        );
     }
 
     #[test]
