@@ -316,7 +316,6 @@
             nodeId={current.id}
             folderSize={current.size}
             driveTotal={summary.volume?.total ?? null}
-            canReveal={isWindows}
             {refreshKey}
             onOpen={(id) => open(id)}
             onNotice={showNotice}

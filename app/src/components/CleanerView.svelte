@@ -365,47 +365,47 @@
       </section>
     {/each}
 
-    <section class="card deep" aria-labelledby="deep-title">
-      <div>
-        <h2 id="deep-title"><Icon name="layers" /> Deep clean</h2>
-        <p class="muted">
-          Removes old, replaced versions of Windows components with Windows' own tool (DISM component store cleanup). It is
-          slow (often 5 to 15 minutes), needs administrator rights, and never runs as part of normal cleaning. Afterwards,
-          some older updates can no longer be uninstalled.
-        </p>
-        {#if deepResult}<p class="ok"><Icon name="check" size={14} /> {deepResult}</p>{/if}
-        {#if deep}
-          <div class="deep-progress" aria-live="polite">
-            <span>Deep clean is running{deep.percent !== null ? `: ${deep.percent.toFixed(1)}%` : "…"}</span>
-            <div
-              class="progress-track"
-              role="progressbar"
-              aria-label="Deep clean progress"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={deep.percent ?? undefined}
-            >
-              {#if deep.percent === null}
-                <span class="progress-fill indeterminate"></span>
-              {:else}
-                <span class="progress-fill" style:width={`${deep.percent}%`}></span>
-              {/if}
+    {#if isWindows}
+      <section class="card deep" aria-labelledby="deep-title">
+        <div>
+          <h2 id="deep-title"><Icon name="layers" /> Deep clean</h2>
+          <p class="muted">
+            Removes old, replaced versions of Windows components with Windows' own tool (DISM component store cleanup). It is
+            slow (often 5 to 15 minutes), needs administrator rights, and never runs as part of normal cleaning. Afterwards,
+            some older updates can no longer be uninstalled.
+          </p>
+          {#if deepResult}<p class="ok"><Icon name="check" size={14} /> {deepResult}</p>{/if}
+          {#if deep}
+            <div class="deep-progress" aria-live="polite">
+              <span>Deep clean is running{deep.percent !== null ? `: ${deep.percent.toFixed(1)}%` : "…"}</span>
+              <div
+                class="progress-track"
+                role="progressbar"
+                aria-label="Deep clean progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={deep.percent ?? undefined}
+              >
+                {#if deep.percent === null}
+                  <span class="progress-fill indeterminate"></span>
+                {:else}
+                  <span class="progress-fill" style:width={`${deep.percent}%`}></span>
+                {/if}
+              </div>
+              <span class="muted small">
+                Windows does this work itself and finishes it safely, so it can't be stopped once started. You can keep using
+                other tabs.
+              </span>
             </div>
-            <span class="muted small">
-              Windows does this work itself and finishes it safely, so it can't be stopped once started. You can keep using
-              other tabs.
-            </span>
-          </div>
+          {/if}
+        </div>
+        {#if !elevated}
+          <button class="btn" onclick={restartAsAdmin}><Icon name="shield" /> Restart as administrator</button>
+        {:else}
+          <button class="btn" onclick={() => (deepConfirm = true)} disabled={deep !== null}><Icon name="layers" /> Run deep clean</button>
         {/if}
-      </div>
-      {#if !isWindows}
-        <span class="muted">Only available on Windows.</span>
-      {:else if !elevated}
-        <button class="btn" onclick={restartAsAdmin}><Icon name="shield" /> Restart as administrator</button>
-      {:else}
-        <button class="btn" onclick={() => (deepConfirm = true)} disabled={deep !== null}><Icon name="layers" /> Run deep clean</button>
-      {/if}
-    </section>
+      </section>
+    {/if}
   {:else if !scanning && !error}
     <div class="empty muted">Scan to find junk files.</div>
   {/if}
