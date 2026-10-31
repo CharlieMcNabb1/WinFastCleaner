@@ -166,3 +166,58 @@ jobs:
       - name: Tear down NTFS test image
         if: always()
         run: sudo scripts/ntfs-test-image.sh teardown "$RUNNER_TEMP/ntfs"
+
+  linux-packages:
+    name: Linux packages build, install, and uninstall
+    # The oldest supported runner, so the AppImage runs on older distros too.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - name: Cache cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: linux-release-cargo-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: linux-release-cargo-
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev librsvg2-dev patchelf file xdg-utils
+
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci --ignore-scripts
+
+      - name: clippy (desktop app on Linux)
+        run: cargo clippy -p cleaner-app --all-targets --locked -- -D warnings
+
+      - name: Build the AppImage and .deb
+        run: scripts/build-linux.sh
+
+      - name: Test install and uninstall (.deb)
+        run: |
+          sudo apt-get install -y ./target/release/bundle/deb/*.deb
+          test -x /usr/bin/winfastcleaner
+          wfc --version
+          sudo apt-get remove -y win-fast-cleaner
+          test ! -e /usr/bin/winfastcleaner

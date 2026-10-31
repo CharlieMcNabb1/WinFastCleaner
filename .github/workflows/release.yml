@@ -1,9 +1,10 @@
 name: Release
 
-# Builds the Windows installer on a version tag (v1.2.3), tests that it
-# installs and uninstalls cleanly, and publishes it with SHA-256 checksums
-# as a draft GitHub release for a maintainer to review and publish.
-# Can also be run by hand to get the installer as a workflow artifact.
+# Builds the Windows installer and the Linux packages (AppImage and .deb)
+# on a version tag (v1.2.3), tests that they install and uninstall cleanly,
+# and publishes them with SHA-256 checksums as a draft GitHub release for a
+# maintainer to review and publish. Can also be run by hand to get them as
+# workflow artifacts.
 on:
   push:
     tags: ["v*"]
@@ -78,9 +79,70 @@ jobs:
           path: release/
           if-no-files-found: error
 
+  build-linux:
+    name: Build and test the packages (Linux)
+    # The oldest supported runner, so the AppImage runs on older distros too.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(node -p 'require("./app/src-tauri/tauri.conf.json").version')
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev librsvg2-dev patchelf file xdg-utils
+
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci --ignore-scripts
+
+      - name: Build the AppImage and .deb
+        run: scripts/build-linux.sh
+
+      - name: Test install and uninstall (.deb)
+        run: |
+          sudo apt-get install -y ./target/release/bundle/deb/*.deb
+          test -x /usr/bin/winfastcleaner
+          wfc --version
+          sudo apt-get remove -y win-fast-cleaner
+          test ! -e /usr/bin/winfastcleaner
+
+      - name: Collect files and checksums
+        run: |
+          mkdir -p release
+          cp target/release/bundle/appimage/*.AppImage target/release/bundle/deb/*.deb release/
+          cp target/release/wfc release/wfc-linux-x86_64
+          (cd release && sha256sum -- * > SHA256SUMS-linux.txt && cat SHA256SUMS-linux.txt)
+
+      - name: Upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: winfastcleaner-linux
+          path: release/
+          if-no-files-found: error
+
   publish:
     name: Draft the GitHub release
-    needs: build
+    needs: [build, build-linux]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -92,12 +154,13 @@ jobs:
       - name: Download
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: winfastcleaner-windows
+          pattern: winfastcleaner-*
+          merge-multiple: true
           path: release
 
       - name: Verify checksums
         working-directory: release
-        run: sha256sum --check SHA256SUMS.txt
+        run: sha256sum --check SHA256SUMS.txt SHA256SUMS-linux.txt
 
       - name: Create a draft release
         env:
@@ -108,4 +171,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --draft \
             --title "WinFastCleaner $TAG" \
-            --notes "Windows installer (64-bit) and the command-line tool. Check a download with: Get-FileHash <file> -Algorithm SHA256, and compare it with SHA256SUMS.txt. Builds are not code-signed yet, so SmartScreen may warn."
+            --notes "Windows installer (64-bit), Linux AppImage and .deb (x86-64), and the command-line tool for each. Check a download with Get-FileHash <file> -Algorithm SHA256 (Windows) or sha256sum <file> (Linux), and compare it with SHA256SUMS.txt or SHA256SUMS-linux.txt. Builds are not code-signed yet, so SmartScreen may warn."
